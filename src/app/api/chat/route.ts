@@ -1,5 +1,5 @@
 import { google } from "@ai-sdk/google";
-import { streamText, tool, stepCountIs } from "ai";
+import { streamText, tool, stepCountIs, convertToModelMessages } from "ai";
 import { z } from "zod";
 import { db } from "@/server/db";
 import {
@@ -58,10 +58,12 @@ Regras:
 export async function POST(req: Request) {
   const { messages } = await req.json();
 
+  const modelMessages = await convertToModelMessages(messages);
+
   const result = streamText({
     model: google("gemini-3-flash-preview"),
     system: SYSTEM_PROMPT,
-    messages,
+    messages: modelMessages,
     tools: {
       consultarCustosSafra: tool({
         description:

@@ -62,6 +62,7 @@ export default async function DashboardPage() {
   }> = [];
   let costChartData: Array<{ name: string; insumos: number; servicos: number }> = [];
   let monthlyExpensesData: Array<{ month: number; total: number }> = [];
+  const currentYear = new Date().getFullYear();
 
   try {
     seasons = await db
@@ -105,7 +106,6 @@ export default async function DashboardPage() {
       pendingServices += parseFloat(pendService?.total ?? "0");
     }
 
-    const currentYear = new Date().getFullYear();
     const today = new Date().toISOString().split("T")[0];
     upcomingActivities = await db
       .select()
@@ -166,7 +166,6 @@ export default async function DashboardPage() {
     // DB not connected
   }
 
-  const currentYear = new Date().getFullYear();
   const totalCosts = totalInputsCost + totalServicesCost;
   const totalPending = pendingInputs + pendingServices;
   const totalArea = seasons.reduce(
