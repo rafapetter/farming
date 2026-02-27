@@ -10,43 +10,56 @@ import {
   financialEntries,
   yieldAssessments,
   farms,
+  fields,
+  advances,
+  loans,
+  consultingVisits,
 } from "@/server/db/schema";
-import { eq, sum, count } from "drizzle-orm";
+import { eq, sum, count, and, desc } from "drizzle-orm";
 
 const SYSTEM_PROMPT = `Você é o "Agente Fazenda", um assistente agrícola inteligente da Fazenda Primavera.
 
 Contexto:
 - A fazenda fica em Goiás, Brasil
-- Área total: 39,23 hectares
-- Safra atual: Soja 2025/2026 (35,8 ha) e Milho 2025/2026 (3,43 ha)
+- Área total: 39,23 hectares (35,8 ha soja + 3,43 ha milho)
+- Safra atual: Soja 2025/2026 (35,8 ha, plantio 23/11/2025, colheita prevista 13/03/2026) e Milho 2025/2026 (3,43 ha)
 - Proprietária: Christina
-- A fazenda cultiva principalmente soja e milho
+- Trabalhador principal: Valdeci
+- Consultor: Rafael
+- Banco: Cresol (empréstimos para custeio)
 
 Suas capacidades:
-- Consultar custos de insumos e serviços das safras
-- Consultar atividades de planejamento/manejo
-- Consultar previsão de produtividade
-- Consultar dados financeiros
+- Consultar custos de insumos e serviços das safras (pago, pendente, total)
+- Consultar atividades de planejamento/manejo (passadas e futuras)
+- Consultar previsão de produtividade (sacas/ha, kg/ha, receita estimada)
+- Comparar cultivares (Lote A vs Lote B)
+- Consultar dados financeiros pessoais (2025 e 2026) por mês, ano ou categoria
+- Consultar adiantamentos feitos ao Valdeci
+- Consultar empréstimos bancários
+- Consultar talhões e suas áreas
+- Consultar visitas de consultoria
 - Registrar novos insumos, serviços, atividades e gastos
+- Gerar relatórios resumidos
 - Fornecer insights e recomendações agrícolas
-- Explicar dados em linguagem simples
 
 Regras:
 - Sempre responda em português brasileiro
 - Use termos agrícolas comuns no Brasil (sacas, hectares, talhão, etc.)
 - Seja conciso mas informativo
-- Quando consultar dados, apresente-os de forma organizada
+- Quando consultar dados, apresente-os de forma organizada com tabelas ou listas
 - Se não souber algo específico, diga honestamente
-- Formate valores monetários em reais (R$)
+- Formate valores monetários em reais (R$) com o formato brasileiro
 - Use o formato brasileiro de números (vírgula para decimais, ponto para milhares)
 - Quando o usuário pedir para registrar algo, confirme os dados antes ou logo após registrar
-- Use cropType "soy" para soja e "corn" para milho`;
+- Use cropType "soy" para soja e "corn" para milho
+- Quando perguntar sobre "resumo geral" ou "relatório", consulte múltiplas fontes de dados
+- Ao analisar dados, destaque pontos de atenção (pagamentos pendentes, custos altos, etc.)`;
 
 export async function POST(req: Request) {
   const { messages } = await req.json();
 
   const result = streamText({
-    model: google("gemini-2.0-flash"),
+    model: google("gemini-3-flash-preview"),
     system: SYSTEM_PROMPT,
     messages,
     tools: {
@@ -499,8 +512,376 @@ export async function POST(req: Request) {
           }
         },
       }),
+      consultarAdiantamentos: tool({
+        description:
+          "Consulta os adiantamentos (dinheiro/materiais) feitos ao Valdeci ou outros trabalhadores.",
+        inputSchema: z.object({
+          cropType: z.enum(["soy", "corn"]).optional().describe("Filtrar por safra"),
+        }),
+        execute: async ({ cropType }) => {
+          try {
+            let advanceList;
+            if (cropType) {
+              const [season] = await db
+                .select()
+                .from(cropSeasons)
+                .where(eq(cropSeasons.cropType, cropType))
+                .limit(1);
+              if (!season) return { error: "Safra não encontrada" };
+              advanceList = await db
+                .select()
+                .from(advances)
+                .where(eq(advances.seasonId, season.id));
+            } else {
+              advanceList = await db.select().from(advances);
+            }
+
+            const total = advanceList.reduce(
+              (s, a) => s + parseFloat(a.value ?? "0"),
+              0
+            );
+
+            return {
+              adiantamentos: advanceList.map((a) => ({
+                destinatario: a.recipient,
+                produto: a.product,
+                quantidade: a.quantity,
+                valor: a.value ? `R$ ${parseFloat(a.value).toFixed(2)}` : "Pendente",
+                data: a.date,
+              })),
+              total: `R$ ${total.toFixed(2)}`,
+              quantidade: advanceList.length,
+            };
+          } catch {
+            return { error: "Erro ao consultar adiantamentos" };
+          }
+        },
+      }),
+
+      consultarEmprestimos: tool({
+        description:
+          "Consulta os empréstimos bancários da fazenda (Cresol).",
+        inputSchema: z.object({}),
+        execute: async () => {
+          try {
+            const loanList = await db.select().from(loans);
+            const totalPayable = loanList.reduce(
+              (s, l) => s + parseFloat(l.amountPayable ?? l.totalAmount),
+              0
+            );
+
+            return {
+              emprestimos: loanList.map((l) => ({
+                descricao: l.description,
+                banco: l.bank,
+                valorEmprestimo: `R$ ${parseFloat(l.totalAmount).toFixed(2)}`,
+                valorAPagar: l.amountPayable
+                  ? `R$ ${parseFloat(l.amountPayable).toFixed(2)}`
+                  : null,
+                status: l.status,
+              })),
+              totalAPagar: `R$ ${totalPayable.toFixed(2)}`,
+            };
+          } catch {
+            return { error: "Erro ao consultar empréstimos" };
+          }
+        },
+      }),
+
+      consultarTalhoes: tool({
+        description:
+          "Consulta os talhões (parcelas de terra) da fazenda com suas áreas.",
+        inputSchema: z.object({}),
+        execute: async () => {
+          try {
+            const fieldList = await db.select().from(fields);
+            const totalArea = fieldList.reduce(
+              (s, f) => s + parseFloat(f.areaHa ?? "0"),
+              0
+            );
+
+            return {
+              talhoes: fieldList.map((f) => ({
+                nome: f.name,
+                area: f.areaHa ? `${f.areaHa} ha` : "Não definida",
+                observacoes: f.notes,
+              })),
+              totalTalhoes: fieldList.length,
+              areaTotal: `${totalArea.toFixed(2)} ha`,
+            };
+          } catch {
+            return { error: "Erro ao consultar talhões" };
+          }
+        },
+      }),
+
+      consultarConsultoria: tool({
+        description:
+          "Consulta as visitas de consultoria realizadas na fazenda.",
+        inputSchema: z.object({}),
+        execute: async () => {
+          try {
+            const visitList = await db
+              .select()
+              .from(consultingVisits)
+              .orderBy(desc(consultingVisits.visitDate));
+
+            return {
+              visitas: visitList.map((v) => ({
+                data: v.visitDate,
+                atividades: v.activities,
+                recomendacoes: v.recommendations,
+              })),
+              totalVisitas: visitList.length,
+            };
+          } catch {
+            return { error: "Erro ao consultar visitas" };
+          }
+        },
+      }),
+
+      consultarComparativoCultivares: tool({
+        description:
+          "Consulta e compara os dados de produtividade dos cultivares Lote A e Lote B da soja.",
+        inputSchema: z.object({}),
+        execute: async () => {
+          try {
+            const [season] = await db
+              .select()
+              .from(cropSeasons)
+              .where(eq(cropSeasons.cropType, "soy"))
+              .limit(1);
+
+            if (!season) return { error: "Safra de soja não encontrada" };
+
+            const assessments = await db
+              .select()
+              .from(yieldAssessments)
+              .where(eq(yieldAssessments.seasonId, season.id));
+
+            return {
+              safra: season.name,
+              cultivares: assessments.map((a) => {
+                const sacksPerHa = parseFloat(a.sacksPerHa || "0");
+                const pricePerSack = parseFloat(a.pricePerSack || "0");
+                const costSacks = parseFloat(a.productionCostSacks || "0");
+                const totalArea = parseFloat(season.totalAreaHa || "0");
+                const lossPct = parseFloat(a.estimatedLossPct || "0");
+
+                return {
+                  nome: a.cultivarName,
+                  kgPorHa: a.kgPerHa,
+                  sacasPorHa: a.sacksPerHa,
+                  populacaoHa: a.plantPopulationHa,
+                  vagensPorPlanta: a.avgPodsPerPlant,
+                  graosPorVagem: a.avgGrainsPerPod,
+                  graosPorPlanta: a.avgGrainsPerPlant,
+                  pmg: a.weight1000GrainsKg,
+                  perdasEstimadas: `${lossPct}%`,
+                  precoSaca: `R$ ${pricePerSack.toFixed(2)}`,
+                  receitaBrutaPorHa: `R$ ${(sacksPerHa * pricePerSack).toFixed(2)}`,
+                  custoProducaoPorHa: `R$ ${(costSacks * pricePerSack).toFixed(2)}`,
+                  resultadoLiquidoPorHa: `R$ ${((sacksPerHa - costSacks) * pricePerSack).toFixed(2)}`,
+                  receitaBrutaTotal: `R$ ${(sacksPerHa * pricePerSack * totalArea).toFixed(2)}`,
+                };
+              }),
+            };
+          } catch {
+            return { error: "Erro ao consultar comparativo" };
+          }
+        },
+      }),
+
+      gerarRelatorioResumo: tool({
+        description:
+          "Gera um relatório resumido com todos os dados principais da fazenda: custos, financeiro, produtividade, empréstimos e status geral.",
+        inputSchema: z.object({}),
+        execute: async () => {
+          try {
+            const allSeasons = await db.select().from(cropSeasons);
+            const loanList = await db.select().from(loans);
+            const fieldList = await db.select().from(fields);
+
+            let totalInputs = 0;
+            let totalServices = 0;
+            let totalPaid = 0;
+            let totalPending = 0;
+
+            for (const s of allSeasons) {
+              const [iSum] = await db
+                .select({ total: sum(inputs.totalPrice) })
+                .from(inputs)
+                .where(eq(inputs.seasonId, s.id));
+              totalInputs += parseFloat(iSum?.total ?? "0");
+
+              const [sSum] = await db
+                .select({ total: sum(services.totalCost) })
+                .from(services)
+                .where(eq(services.seasonId, s.id));
+              totalServices += parseFloat(sSum?.total ?? "0");
+
+              const inputsList = await db
+                .select()
+                .from(inputs)
+                .where(eq(inputs.seasonId, s.id));
+
+              totalPaid += inputsList
+                .filter((i) => i.paymentStatus === "paid")
+                .reduce((acc, i) => acc + parseFloat(i.totalPrice || "0"), 0);
+              totalPending += inputsList
+                .filter((i) => i.paymentStatus === "pending")
+                .reduce((acc, i) => acc + parseFloat(i.totalPrice || "0"), 0);
+            }
+
+            const allExpenses = await db
+              .select()
+              .from(financialEntries)
+              .where(eq(financialEntries.type, "expense"));
+            const allIncome = await db
+              .select()
+              .from(financialEntries)
+              .where(eq(financialEntries.type, "income"));
+
+            const totalExpenses = allExpenses.reduce(
+              (s, e) => s + parseFloat(e.amount),
+              0
+            );
+            const totalIncome = allIncome.reduce(
+              (s, e) => s + parseFloat(e.amount),
+              0
+            );
+
+            const totalLoanPayable = loanList.reduce(
+              (s, l) => s + parseFloat(l.amountPayable ?? l.totalAmount),
+              0
+            );
+
+            return {
+              safras: allSeasons.map((s) => ({
+                nome: s.name,
+                cultura: s.cropType === "soy" ? "Soja" : s.cropType === "corn" ? "Milho" : s.cropType,
+                area: `${s.totalAreaHa} ha`,
+                status: s.status,
+              })),
+              custosSafras: {
+                insumos: `R$ ${totalInputs.toFixed(2)}`,
+                servicos: `R$ ${totalServices.toFixed(2)}`,
+                total: `R$ ${(totalInputs + totalServices).toFixed(2)}`,
+                pago: `R$ ${totalPaid.toFixed(2)}`,
+                pendente: `R$ ${totalPending.toFixed(2)}`,
+              },
+              financeiroPessoal: {
+                despesas: `R$ ${totalExpenses.toFixed(2)}`,
+                receitas: `R$ ${totalIncome.toFixed(2)}`,
+                saldo: `R$ ${(totalIncome - totalExpenses).toFixed(2)}`,
+              },
+              emprestimos: {
+                total: `R$ ${totalLoanPayable.toFixed(2)}`,
+                quantidade: loanList.length,
+              },
+              talhoes: {
+                quantidade: fieldList.length,
+                areaMapeada: `${fieldList.reduce((s, f) => s + parseFloat(f.areaHa ?? "0"), 0).toFixed(2)} ha`,
+              },
+            };
+          } catch {
+            return { error: "Erro ao gerar relatório" };
+          }
+        },
+      }),
+
+      consultarInsumosDetalhados: tool({
+        description:
+          "Consulta a lista detalhada de insumos de uma safra, incluindo nome, categoria, quantidade, valor e status de pagamento.",
+        inputSchema: z.object({
+          cropType: z.enum(["soy", "corn"]).describe("Tipo de cultura"),
+        }),
+        execute: async ({ cropType }) => {
+          try {
+            const [season] = await db
+              .select()
+              .from(cropSeasons)
+              .where(eq(cropSeasons.cropType, cropType))
+              .limit(1);
+
+            if (!season) return { error: "Safra não encontrada" };
+
+            const inputsList = await db
+              .select()
+              .from(inputs)
+              .where(eq(inputs.seasonId, season.id));
+
+            const categoryMap: Record<string, string> = {
+              seed: "Semente",
+              fertilizer: "Fertilizante",
+              herbicide: "Herbicida",
+              insecticide: "Inseticida",
+              fungicide: "Fungicida",
+              adjuvant: "Adjuvante",
+              other: "Outro",
+            };
+
+            return {
+              safra: season.name,
+              insumos: inputsList.map((i) => ({
+                nome: i.name,
+                categoria: categoryMap[i.category] ?? i.category,
+                quantidade: i.quantity,
+                unidade: i.unit,
+                valorUnitario: i.unitPrice ? `R$ ${parseFloat(i.unitPrice).toFixed(2)}` : null,
+                valorTotal: i.totalPrice ? `R$ ${parseFloat(i.totalPrice).toFixed(2)}` : null,
+                pagamento: i.paymentStatus === "paid" ? "Pago" : i.paymentStatus === "pending" ? "Pendente" : "Parcial",
+              })),
+              total: inputsList.length,
+            };
+          } catch {
+            return { error: "Erro ao consultar insumos" };
+          }
+        },
+      }),
+
+      consultarServicosDetalhados: tool({
+        description:
+          "Consulta a lista detalhada de serviços de uma safra, incluindo descrição, hectares, horas, custo e status de pagamento.",
+        inputSchema: z.object({
+          cropType: z.enum(["soy", "corn"]).describe("Tipo de cultura"),
+        }),
+        execute: async ({ cropType }) => {
+          try {
+            const [season] = await db
+              .select()
+              .from(cropSeasons)
+              .where(eq(cropSeasons.cropType, cropType))
+              .limit(1);
+
+            if (!season) return { error: "Safra não encontrada" };
+
+            const servicesList = await db
+              .select()
+              .from(services)
+              .where(eq(services.seasonId, season.id));
+
+            return {
+              safra: season.name,
+              servicos: servicesList.map((s) => ({
+                descricao: s.description,
+                hectares: s.hectares,
+                horas: s.hours,
+                custoPorHectare: s.costPerHectare ? `R$ ${parseFloat(s.costPerHectare).toFixed(2)}` : null,
+                custoPorHora: s.costPerHour ? `R$ ${parseFloat(s.costPerHour).toFixed(2)}` : null,
+                custoTotal: s.totalCost ? `R$ ${parseFloat(s.totalCost).toFixed(2)}` : null,
+                trabalhador: s.workerName,
+                pagamento: s.paymentStatus === "paid" ? "Pago" : s.paymentStatus === "pending" ? "Pendente" : "Parcial",
+              })),
+              total: servicesList.length,
+            };
+          } catch {
+            return { error: "Erro ao consultar serviços" };
+          }
+        },
+      }),
     },
-    stopWhen: stepCountIs(5),
+    stopWhen: stepCountIs(8),
   });
 
   return result.toUIMessageStreamResponse();

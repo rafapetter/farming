@@ -12,6 +12,7 @@ import {
   Settings,
   Sprout,
   LogOut,
+  Brain,
 } from "lucide-react";
 import {
   Sidebar,
@@ -36,6 +37,7 @@ const iconMap = {
   Map,
   Bot,
   Settings,
+  Brain,
 } as const;
 
 interface AppSidebarProps {

@@ -120,7 +120,7 @@ export function ChatPanel() {
                 </Avatar>
                 <div>
                   <SheetTitle className="text-base">Agente Fazenda</SheetTitle>
-                  <p className="text-xs text-muted-foreground">Gemini 2.0 Flash</p>
+                  <p className="text-xs text-muted-foreground">Gemini 3.0 Flash</p>
                 </div>
               </div>
               <Button variant="ghost" size="icon" onClick={() => setOpen(false)}>

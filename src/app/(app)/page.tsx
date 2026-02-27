@@ -23,6 +23,7 @@ import {
   TrendingUp,
   AlertTriangle,
   Bot,
+  Brain,
 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -104,6 +105,7 @@ export default async function DashboardPage() {
       pendingServices += parseFloat(pendService?.total ?? "0");
     }
 
+    const currentYear = new Date().getFullYear();
     const today = new Date().toISOString().split("T")[0];
     upcomingActivities = await db
       .select()
@@ -151,7 +153,7 @@ export default async function DashboardPage() {
     const allFinancial = await db
       .select()
       .from(financialEntries)
-      .where(eq(financialEntries.year, 2026));
+      .where(eq(financialEntries.year, currentYear));
     const byMonth = new Map<number, number>();
     for (const entry of allFinancial) {
       const m = entry.month ?? 1;
@@ -164,6 +166,7 @@ export default async function DashboardPage() {
     // DB not connected
   }
 
+  const currentYear = new Date().getFullYear();
   const totalCosts = totalInputsCost + totalServicesCost;
   const totalPending = pendingInputs + pendingServices;
   const totalArea = seasons.reduce(
@@ -196,6 +199,12 @@ export default async function DashboardPage() {
           <Link href="/agente">
             <Bot className="mr-2 h-4 w-4" />
             Falar com Agente
+          </Link>
+        </Button>
+        <Button asChild size="sm" variant="outline">
+          <Link href="/analises">
+            <Brain className="mr-2 h-4 w-4" />
+            Análises IA
           </Link>
         </Button>
         {session?.user?.role === "owner" && (
@@ -296,30 +305,34 @@ export default async function DashboardPage() {
       {(costChartData.length > 0 || monthlyExpensesData.length > 0) && (
         <div className="grid gap-4 md:grid-cols-2">
           {costChartData.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">
-                  Custos por Safra
-                </CardTitle>
-                <CardDescription>Insumos vs Serviços</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <CostBreakdownChart data={costChartData} />
-              </CardContent>
-            </Card>
+            <Link href="/safras">
+              <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
+                <CardHeader>
+                  <CardTitle className="text-base">
+                    Custos por Safra
+                  </CardTitle>
+                  <CardDescription>Insumos vs Serviços</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <CostBreakdownChart data={costChartData} />
+                </CardContent>
+              </Card>
+            </Link>
           )}
           {monthlyExpensesData.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">
-                  Gastos Mensais 2026
-                </CardTitle>
-                <CardDescription>Controle financeiro</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <MonthlyExpensesChart data={monthlyExpensesData} />
-              </CardContent>
-            </Card>
+            <Link href="/financeiro">
+              <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
+                <CardHeader>
+                  <CardTitle className="text-base">
+                    Gastos Mensais {currentYear}
+                  </CardTitle>
+                  <CardDescription>Controle financeiro</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <MonthlyExpensesChart data={monthlyExpensesData} />
+                </CardContent>
+              </Card>
+            </Link>
           )}
         </div>
       )}
@@ -334,40 +347,44 @@ export default async function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="flex items-start gap-3 rounded-lg border p-3">
-              <DollarSign className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
-              <div>
-                <p className="text-sm font-medium">Pagamentos pendentes</p>
-                <p className="text-xs text-muted-foreground">
-                  Existem{" "}
-                  {totalPending.toLocaleString("pt-BR", {
-                    style: "currency",
-                    currency: "BRL",
-                  })}{" "}
-                  em insumos e serviços com pagamento pendente.
-                </p>
-              </div>
-              <Badge variant="outline" className="shrink-0">
-                Financeiro
-              </Badge>
-            </div>
-            {upcomingActivities.length > 0 && (
-              <div className="flex items-start gap-3 rounded-lg border p-3">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-500" />
-                <div>
-                  <p className="text-sm font-medium">Atividades programadas</p>
+            <Link href={seasons[0] ? `/safras/${seasons[0].id}/insumos` : "/safras"}>
+              <div className="flex items-start gap-3 rounded-lg border p-3 hover:bg-muted/50 transition-colors cursor-pointer">
+                <DollarSign className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium">Pagamentos pendentes</p>
                   <p className="text-xs text-muted-foreground">
-                    {upcomingActivities.length} atividade(s) planejada(s):{" "}
-                    {upcomingActivities
-                      .slice(0, 3)
-                      .map((a) => a.title)
-                      .join(", ")}
+                    Existem{" "}
+                    {totalPending.toLocaleString("pt-BR", {
+                      style: "currency",
+                      currency: "BRL",
+                    })}{" "}
+                    em insumos e serviços com pagamento pendente.
                   </p>
                 </div>
                 <Badge variant="outline" className="shrink-0">
-                  Planejamento
+                  Financeiro
                 </Badge>
               </div>
+            </Link>
+            {upcomingActivities.length > 0 && (
+              <Link href={seasons[0] ? `/safras/${seasons[0].id}/planejamento` : "/safras"}>
+                <div className="flex items-start gap-3 rounded-lg border p-3 hover:bg-muted/50 transition-colors cursor-pointer">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-500" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">Atividades programadas</p>
+                    <p className="text-xs text-muted-foreground">
+                      {upcomingActivities.length} atividade(s) planejada(s):{" "}
+                      {upcomingActivities
+                        .slice(0, 3)
+                        .map((a) => a.title)
+                        .join(", ")}
+                    </p>
+                  </div>
+                  <Badge variant="outline" className="shrink-0">
+                    Planejamento
+                  </Badge>
+                </div>
+              </Link>
             )}
           </CardContent>
         </Card>
@@ -376,33 +393,44 @@ export default async function DashboardPage() {
       {/* Recent Activities */}
       {recentActivities.length > 0 && (
         <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Atividades Recentes</CardTitle>
-            <CardDescription>
-              Últimas atividades concluídas
-            </CardDescription>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="text-base">Atividades Recentes</CardTitle>
+              <CardDescription>
+                Últimas atividades concluídas
+              </CardDescription>
+            </div>
+            {seasons[0] && (
+              <Button asChild variant="ghost" size="sm">
+                <Link href={`/safras/${seasons[0].id}/planejamento`}>
+                  Ver todas
+                </Link>
+              </Button>
+            )}
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
               {recentActivities.map((activity) => (
-                <div
+                <Link
                   key={activity.id}
-                  className="flex items-center justify-between rounded-lg border p-3"
+                  href={`/safras/${activity.seasonId}/planejamento`}
                 >
-                  <div className="flex items-center gap-3">
-                    <CalendarDays className="h-4 w-4 text-muted-foreground" />
-                    <div>
-                      <p className="text-sm font-medium">{activity.title}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {activity.scheduledDate &&
-                          new Date(activity.scheduledDate).toLocaleDateString(
-                            "pt-BR"
-                          )}
-                        {activity.quantity && ` - ${activity.quantity}`}
-                      </p>
+                  <div className="flex items-center justify-between rounded-lg border p-3 hover:bg-muted/50 transition-colors cursor-pointer">
+                    <div className="flex items-center gap-3">
+                      <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                      <div>
+                        <p className="text-sm font-medium">{activity.title}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {activity.scheduledDate &&
+                            new Date(activity.scheduledDate).toLocaleDateString(
+                              "pt-BR"
+                            )}
+                          {activity.quantity && ` - ${activity.quantity}`}
+                        </p>
+                      </div>
                     </div>
                   </div>
-                </div>
+                </Link>
               ))}
             </div>
           </CardContent>

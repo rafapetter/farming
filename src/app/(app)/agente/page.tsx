@@ -82,7 +82,7 @@ export default function AgentePage() {
       <div className="mb-4">
         <h1 className="text-2xl font-bold tracking-tight">Agente IA</h1>
         <p className="text-sm text-muted-foreground">
-          Assistente agrícola inteligente - Gemini 2.0 Flash
+          Assistente agrícola inteligente - Gemini 3.0 Flash
         </p>
       </div>
 

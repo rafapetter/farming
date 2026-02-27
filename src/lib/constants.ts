@@ -4,7 +4,7 @@ export const FARM_NAME = "Fazenda Primavera";
 interface NavItem {
   title: string;
   href: string;
-  icon: "LayoutDashboard" | "Wheat" | "DollarSign" | "ClipboardList" | "Map" | "Bot" | "Settings";
+  icon: "LayoutDashboard" | "Wheat" | "DollarSign" | "ClipboardList" | "Map" | "Bot" | "Settings" | "Brain";
   ownerOnly?: boolean;
 }
 
@@ -12,6 +12,7 @@ export const NAV_ITEMS: NavItem[] = [
   { title: "Painel", href: "/", icon: "LayoutDashboard" },
   { title: "Safras", href: "/safras", icon: "Wheat" },
   { title: "Financeiro", href: "/financeiro", icon: "DollarSign", ownerOnly: true },
+  { title: "Análises IA", href: "/analises", icon: "Brain" },
   { title: "Consultoria", href: "/consultoria", icon: "ClipboardList" },
   { title: "Talhões", href: "/talhoes", icon: "Map" },
   { title: "Agente IA", href: "/agente", icon: "Bot" },

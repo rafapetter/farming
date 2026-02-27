@@ -6,7 +6,7 @@ import {
   LayoutDashboard,
   Wheat,
   DollarSign,
-  ClipboardList,
+  Brain,
   Bot,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -24,7 +24,7 @@ export function BottomNav({ userRole }: BottomNavProps) {
     ...(userRole === "owner"
       ? [{ title: "Financeiro", href: "/financeiro", icon: DollarSign }]
       : []),
-    { title: "Consultoria", href: "/consultoria", icon: ClipboardList },
+    { title: "Análises", href: "/analises", icon: Brain },
     { title: "Agente", href: "/agente", icon: Bot },
   ];
 
