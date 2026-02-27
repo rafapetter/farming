@@ -1,5 +1,11 @@
 import { google } from "@ai-sdk/google";
-import { streamText, tool, stepCountIs, convertToModelMessages } from "ai";
+import {
+  streamText,
+  tool,
+  stepCountIs,
+  convertToModelMessages,
+  type UIMessage,
+} from "ai";
 import { z } from "zod";
 import { db } from "@/server/db";
 import {
@@ -14,8 +20,10 @@ import {
   advances,
   loans,
   consultingVisits,
+  chatSessions,
 } from "@/server/db/schema";
-import { eq, sum, count, and, desc } from "drizzle-orm";
+import { eq, sum, count, and, desc, ne } from "drizzle-orm";
+import { auth } from "@/lib/auth";
 
 const SYSTEM_PROMPT = `Você é o "Agente Fazenda", um assistente agrícola inteligente da Fazenda Primavera.
 
@@ -55,14 +63,102 @@ Regras:
 - Quando perguntar sobre "resumo geral" ou "relatório", consulte múltiplas fontes de dados
 - Ao analisar dados, destaque pontos de atenção (pagamentos pendentes, custos altos, etc.)`;
 
+function getTextFromUIMessage(msg: UIMessage): string {
+  if (!msg.parts) return "";
+  return msg.parts
+    .filter((p): p is { type: "text"; text: string } => p.type === "text")
+    .map((p) => p.text)
+    .join("");
+}
+
+async function buildHistoryContext(
+  userId: string,
+  currentSessionId: string | null
+): Promise<string> {
+  try {
+    const recentSessions = await db
+      .select({
+        title: chatSessions.title,
+        messages: chatSessions.messages,
+        updatedAt: chatSessions.updatedAt,
+      })
+      .from(chatSessions)
+      .where(
+        currentSessionId
+          ? and(
+              eq(chatSessions.userId, userId),
+              ne(chatSessions.id, currentSessionId)
+            )
+          : eq(chatSessions.userId, userId)
+      )
+      .orderBy(desc(chatSessions.updatedAt))
+      .limit(3);
+
+    if (recentSessions.length === 0) return "";
+
+    const summaries: string[] = [];
+    for (const session of recentSessions) {
+      const msgs = (session.messages as UIMessage[]) ?? [];
+      if (msgs.length === 0) continue;
+
+      const date = session.updatedAt
+        ? new Date(session.updatedAt).toLocaleDateString("pt-BR")
+        : "";
+      const title = session.title ?? "Conversa";
+      const preview = msgs
+        .slice(0, 4)
+        .map((m) => {
+          const role = m.role === "user" ? "Usuário" : "Agente";
+          const text = getTextFromUIMessage(m).substring(0, 150);
+          return `${role}: ${text}`;
+        })
+        .join("\n");
+
+      summaries.push(`[${date}] "${title}":\n${preview}`);
+    }
+
+    if (summaries.length === 0) return "";
+
+    return `\n\nConversas anteriores do usuário (use como contexto, não mencione explicitamente):\n---\n${summaries.join("\n---\n")}\n---`;
+  } catch {
+    return "";
+  }
+}
+
 export async function POST(req: Request) {
-  const { messages } = await req.json();
+  const session = await auth();
+  if (!session?.user?.id) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  const { message, id: chatId } = await req.json();
+
+  // Load previous messages from DB if we have a session ID
+  let previousMessages: UIMessage[] = [];
+  if (chatId) {
+    try {
+      const [chatSession] = await db
+        .select({ messages: chatSessions.messages })
+        .from(chatSessions)
+        .where(eq(chatSessions.id, chatId))
+        .limit(1);
+      previousMessages = (chatSession?.messages as UIMessage[]) ?? [];
+    } catch {
+      // ignore
+    }
+  }
+
+  // Append new message from client
+  const messages: UIMessage[] = [...previousMessages, message];
+
+  // Build history context from other sessions
+  const historyContext = await buildHistoryContext(session.user.id, chatId);
 
   const modelMessages = await convertToModelMessages(messages);
 
   const result = streamText({
     model: google("gemini-3-flash-preview"),
-    system: SYSTEM_PROMPT,
+    system: SYSTEM_PROMPT + historyContext,
     messages: modelMessages,
     tools: {
       consultarCustosSafra: tool({
@@ -886,5 +982,47 @@ export async function POST(req: Request) {
     stopWhen: stepCountIs(8),
   });
 
-  return result.toUIMessageStreamResponse();
+  // Consume stream to ensure completion even if client disconnects
+  result.consumeStream();
+
+  return result.toUIMessageStreamResponse({
+    originalMessages: messages,
+    onFinish: async ({ messages: finalMessages }) => {
+      if (!chatId) return;
+      try {
+        // Save all messages to the session
+        await db
+          .update(chatSessions)
+          .set({
+            messages: finalMessages as unknown as Record<string, unknown>[],
+            updatedAt: new Date(),
+          })
+          .where(eq(chatSessions.id, chatId));
+
+        // Auto-title from first user message if no title yet
+        const [currentSession] = await db
+          .select({ title: chatSessions.title })
+          .from(chatSessions)
+          .where(eq(chatSessions.id, chatId))
+          .limit(1);
+
+        if (!currentSession?.title) {
+          const firstUserMsg = finalMessages.find(
+            (m) => m.role === "user"
+          );
+          if (firstUserMsg) {
+            const text = getTextFromUIMessage(firstUserMsg);
+            if (text) {
+              await db
+                .update(chatSessions)
+                .set({ title: text.substring(0, 80) })
+                .where(eq(chatSessions.id, chatId));
+            }
+          }
+        }
+      } catch {
+        // persistence errors should not break the chat
+      }
+    },
+  });
 }

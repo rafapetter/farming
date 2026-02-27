@@ -1,39 +1,64 @@
 "use client";
 
-import { useState, useRef, useEffect, useMemo } from "react";
-import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
-import { Send, Mic, MicOff, Sprout } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import {
+  Send,
+  Mic,
+  MicOff,
+  Sprout,
+  Plus,
+  History,
+  Trash2,
+  ChevronLeft,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Card,
-  CardContent,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { MarkdownMessage, getMessageText } from "@/components/ai/markdown-message";
+import {
+  MarkdownMessage,
+  getMessageText,
+} from "@/components/ai/markdown-message";
+import { usePersistedChat } from "@/hooks/use-persisted-chat";
+
+function timeAgo(date: Date | null): string {
+  if (!date) return "";
+  const diff = Date.now() - new Date(date).getTime();
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return "agora";
+  if (minutes < 60) return `${minutes}min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  return `${days}d`;
+}
 
 export default function AgentePage() {
   const [inputValue, setInputValue] = useState("");
   const [isListening, setIsListening] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const transport = useMemo(
-    () => new DefaultChatTransport({ api: "/api/chat" }),
-    []
-  );
-
-  const { messages, sendMessage, status } = useChat({ transport });
-
-  const isLoading = status === "streaming" || status === "submitted";
+  const {
+    messages,
+    sendMessage,
+    isLoading,
+    chatId,
+    sessions,
+    startNewChat,
+    loadSession,
+    removeSession,
+    ensureSession,
+  } = usePersistedChat();
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  function handleSend() {
+  async function handleSend() {
     if (!inputValue.trim() || isLoading) return;
+    await ensureSession();
     sendMessage({ text: inputValue.trim() });
     setInputValue("");
   }
@@ -77,13 +102,115 @@ export default function AgentePage() {
     }
   }
 
+  // Show session history view
+  if (showHistory) {
+    return (
+      <div className="flex h-[calc(100vh-8rem)] md:h-[calc(100vh-5rem)] flex-col">
+        <div className="mb-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowHistory(false)}
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </Button>
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight">Conversas</h1>
+              <p className="text-sm text-muted-foreground">
+                Histórico de conversas com o agente
+              </p>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            onClick={() => {
+              startNewChat();
+              setShowHistory(false);
+            }}
+          >
+            <Plus className="mr-1 h-4 w-4" />
+            Nova
+          </Button>
+        </div>
+
+        <ScrollArea className="flex-1">
+          <div className="space-y-2 pr-4">
+            {sessions.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <History className="h-12 w-12 text-muted-foreground/50 mb-4" />
+                <p className="text-sm text-muted-foreground">
+                  Nenhuma conversa anterior
+                </p>
+              </div>
+            ) : (
+              sessions.map((session) => (
+                <div
+                  key={session.id}
+                  className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition-colors hover:bg-muted/50 ${
+                    chatId === session.id ? "ring-2 ring-primary bg-muted/30" : ""
+                  }`}
+                  onClick={() => {
+                    loadSession(session.id);
+                    setShowHistory(false);
+                  }}
+                >
+                  <Sprout className="h-4 w-4 text-primary shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">
+                      {session.title ?? "Nova conversa"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {timeAgo(session.updatedAt ?? session.createdAt)}
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="shrink-0 h-8 w-8"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeSession(session.id);
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
+        </ScrollArea>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-[calc(100vh-8rem)] md:h-[calc(100vh-5rem)] flex-col">
-      <div className="mb-4">
-        <h1 className="text-2xl font-bold tracking-tight">Agente IA</h1>
-        <p className="text-sm text-muted-foreground">
-          Assistente agrícola inteligente - Gemini 3.0 Flash
-        </p>
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Agente IA</h1>
+          <p className="text-sm text-muted-foreground">
+            Assistente agrícola inteligente - Gemini 3.0 Flash
+          </p>
+        </div>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => setShowHistory(true)}
+            title="Histórico"
+          >
+            <History className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={startNewChat}
+            title="Nova conversa"
+          >
+            <Plus className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
       {/* Messages */}
@@ -100,9 +227,10 @@ export default function AgentePage() {
                 <Card>
                   <CardContent className="p-3">
                     <p className="text-sm">
-                      Olá! Eu sou o <strong>Agente Fazenda</strong>, seu assistente agrícola.
-                      Posso ajudar com informações sobre suas safras, custos,
-                      planejamento, previsão de produtividade e muito mais.
+                      Olá! Eu sou o <strong>Agente Fazenda</strong>, seu
+                      assistente agrícola. Posso ajudar com informações sobre
+                      suas safras, custos, planejamento, previsão de
+                      produtividade e muito mais.
                     </p>
                   </CardContent>
                 </Card>
@@ -118,7 +246,10 @@ export default function AgentePage() {
                 ].map((suggestion) => (
                   <button
                     key={suggestion}
-                    onClick={() => sendMessage({ text: suggestion })}
+                    onClick={async () => {
+                      await ensureSession();
+                      sendMessage({ text: suggestion });
+                    }}
                     className="rounded-lg border p-2.5 text-left text-xs hover:bg-muted transition-colors"
                   >
                     {suggestion}
@@ -144,11 +275,7 @@ export default function AgentePage() {
                         : "bg-secondary"
                     }
                   >
-                    {!isUser ? (
-                      <Sprout className="h-4 w-4" />
-                    ) : (
-                      "EU"
-                    )}
+                    {!isUser ? <Sprout className="h-4 w-4" /> : "EU"}
                   </AvatarFallback>
                 </Avatar>
                 <Card

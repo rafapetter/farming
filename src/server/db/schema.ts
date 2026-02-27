@@ -330,6 +330,7 @@ export const chatSessions = pgTable("chat_sessions", {
     .references(() => farms.id)
     .notNull(),
   title: text("title"),
+  messages: jsonb("messages"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at"),
 });
