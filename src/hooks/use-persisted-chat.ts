@@ -52,8 +52,12 @@ export function usePersistedChat() {
   const isLoading = status === "streaming" || status === "submitted";
 
   const refreshSessions = useCallback(async () => {
-    const list = await listChatSessions();
-    setSessions(list);
+    try {
+      const list = await listChatSessions();
+      setSessions(list);
+    } catch {
+      // ignore - may fail if user session is invalid
+    }
   }, []);
 
   useEffect(() => {
@@ -67,15 +71,19 @@ export function usePersistedChat() {
     loadedInitial.current = true;
     const mostRecent = sessions[0];
     if (mostRecent) {
-      loadChatMessages(mostRecent.id).then((msgs) => {
-        const uiMessages = msgs as UIMessage[];
-        if (uiMessages.length > 0) {
-          setChatId(mostRecent.id);
-          chatIdRef.current = mostRecent.id;
-          setInitialMessages(uiMessages);
-          setMessages(uiMessages);
-        }
-      });
+      loadChatMessages(mostRecent.id)
+        .then((msgs) => {
+          const uiMessages = msgs as UIMessage[];
+          if (uiMessages.length > 0) {
+            setChatId(mostRecent.id);
+            chatIdRef.current = mostRecent.id;
+            setInitialMessages(uiMessages);
+            setMessages(uiMessages);
+          }
+        })
+        .catch(() => {
+          // ignore load errors
+        });
     }
   }, [sessions, setMessages]);
 

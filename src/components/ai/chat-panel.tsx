@@ -108,18 +108,21 @@ export function ChatPanel() {
 
   return (
     <>
-      {/* FAB Button */}
-      <Button
-        onClick={() => setOpen(true)}
-        className="fixed bottom-20 right-4 z-50 h-14 w-14 rounded-full shadow-lg md:bottom-6"
-        size="icon"
-      >
-        <Sprout className="h-6 w-6" />
-      </Button>
+      {/* FAB Button - hidden when sheet is open */}
+      {!open && (
+        <Button
+          onClick={() => setOpen(true)}
+          className="fixed bottom-20 right-4 z-50 h-14 w-14 rounded-full shadow-lg md:bottom-6"
+          size="icon"
+        >
+          <Sprout className="h-6 w-6" />
+        </Button>
+      )}
 
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent
           side="right"
+          showCloseButton={false}
           className="flex w-full flex-col p-0 sm:max-w-lg"
         >
           <SheetHeader className="border-b px-4 py-3">

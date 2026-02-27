@@ -12,15 +12,20 @@ export async function createChatSession() {
   const [farm] = await db.select({ id: farms.id }).from(farms).limit(1);
   if (!farm) return { error: "Fazenda não encontrada" };
 
-  const [newSession] = await db
-    .insert(chatSessions)
-    .values({
-      userId: session.user.id,
-      farmId: farm.id,
-    })
-    .returning();
+  try {
+    const [newSession] = await db
+      .insert(chatSessions)
+      .values({
+        userId: session.user.id,
+        farmId: farm.id,
+      })
+      .returning();
 
-  return { id: newSession.id };
+    return { id: newSession.id };
+  } catch (e) {
+    console.error("Failed to create chat session:", e);
+    return { error: "Erro ao criar sessão de chat" };
+  }
 }
 
 export async function listChatSessions() {
