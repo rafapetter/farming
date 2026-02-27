@@ -24,11 +24,14 @@ import {
   AlertTriangle,
   Bot,
   Brain,
+  CloudRain,
 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { CostBreakdownChart } from "@/components/charts/cost-breakdown-chart";
 import { MonthlyExpensesChart } from "@/components/charts/monthly-expenses-chart";
+import { RainTimelineChart } from "@/components/charts/rain-timeline-chart";
+import { getMergedRainData } from "@/lib/rain-api";
 
 export default async function DashboardPage() {
   const session = await auth();
@@ -164,6 +167,20 @@ export default async function DashboardPage() {
       .map(([month, total]) => ({ month, total }));
   } catch {
     // DB not connected
+  }
+
+  // Rain data
+  let rainData: Array<{ date: string; precipitationMm: number; source: "api" | "manual" }> = [];
+  let totalRainMm = 0;
+  let last7DaysRain = 0;
+  try {
+    const todayStr = new Date().toISOString().split("T")[0];
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString().split("T")[0];
+    rainData = await getMergedRainData(thirtyDaysAgo, todayStr);
+    totalRainMm = rainData.reduce((s, d) => s + d.precipitationMm, 0);
+    last7DaysRain = rainData.slice(-7).reduce((s, d) => s + d.precipitationMm, 0);
+  } catch {
+    // rain API errors should not break dashboard
   }
 
   const totalCosts = totalInputsCost + totalServicesCost;
@@ -334,6 +351,28 @@ export default async function DashboardPage() {
             </Link>
           )}
         </div>
+      )}
+
+      {/* Rain Chart */}
+      {rainData.length > 0 && (
+        <Link href="/chuvas">
+          <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-base">Chuvas</CardTitle>
+                  <CardDescription>
+                    Últimos 30 dias: {totalRainMm.toFixed(0)} mm | Últimos 7 dias: {last7DaysRain.toFixed(0)} mm
+                  </CardDescription>
+                </div>
+                <CloudRain className="h-5 w-5 text-blue-500" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <RainTimelineChart data={rainData} />
+            </CardContent>
+          </Card>
+        </Link>
       )}
 
       {/* AI Insights / Alerts */}

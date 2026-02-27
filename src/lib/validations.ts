@@ -102,3 +102,11 @@ export const cropSeasonFormSchema = z.object({
 });
 
 export type CropSeasonFormValues = z.infer<typeof cropSeasonFormSchema>;
+
+export const rainEntryFormSchema = z.object({
+  date: z.string().min(1, "Data é obrigatória"),
+  volumeMm: z.coerce.number().min(0, "Volume deve ser positivo"),
+  notes: z.string().optional(),
+});
+
+export type RainEntryFormValues = z.infer<typeof rainEntryFormSchema>;

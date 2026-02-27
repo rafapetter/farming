@@ -90,6 +90,8 @@ export const farms = pgTable("farms", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull(),
   location: text("location"),
+  latitude: decimal("latitude", { precision: 10, scale: 7 }),
+  longitude: decimal("longitude", { precision: 10, scale: 7 }),
   totalAreaHa: decimal("total_area_ha", { precision: 10, scale: 2 }),
   ownerId: uuid("owner_id")
     .references(() => users.id)
@@ -263,6 +265,32 @@ export const financialEntries = pgTable("financial_entries", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// ─── Rain/Precipitation Tables ──────────────────────────────────────────────
+
+export const rainEntries = pgTable("rain_entries", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  farmId: uuid("farm_id")
+    .references(() => farms.id)
+    .notNull(),
+  date: date("date").notNull(),
+  volumeMm: decimal("volume_mm", { precision: 8, scale: 2 }).notNull(),
+  source: text("source").notNull().default("manual"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const rainCache = pgTable("rain_cache", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  farmId: uuid("farm_id")
+    .references(() => farms.id)
+    .notNull(),
+  queryType: text("query_type").notNull(),
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date").notNull(),
+  responseData: jsonb("response_data").notNull(),
+  fetchedAt: timestamp("fetched_at").defaultNow().notNull(),
+});
+
 // ─── Consulting Tables ───────────────────────────────────────────────────────
 
 export const consultingVisits = pgTable("consulting_visits", {
@@ -378,6 +406,7 @@ export const farmsRelations = relations(farms, ({ one, many }) => ({
   loans: many(loans),
   aiInsights: many(aiInsights),
   chatSessions: many(chatSessions),
+  rainEntries: many(rainEntries),
 }));
 
 export const cropSeasonsRelations = relations(cropSeasons, ({ one, many }) => ({
@@ -532,5 +561,19 @@ export const aiInsightsRelations = relations(aiInsights, ({ one }) => ({
   season: one(cropSeasons, {
     fields: [aiInsights.seasonId],
     references: [cropSeasons.id],
+  }),
+}));
+
+export const rainEntriesRelations = relations(rainEntries, ({ one }) => ({
+  farm: one(farms, {
+    fields: [rainEntries.farmId],
+    references: [farms.id],
+  }),
+}));
+
+export const rainCacheRelations = relations(rainCache, ({ one }) => ({
+  farm: one(farms, {
+    fields: [rainCache.farmId],
+    references: [farms.id],
   }),
 }));

@@ -8,6 +8,7 @@ import {
   DollarSign,
   Brain,
   Bot,
+  CloudRain,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -24,7 +25,7 @@ export function BottomNav({ userRole }: BottomNavProps) {
     ...(userRole === "owner"
       ? [{ title: "Financeiro", href: "/financeiro", icon: DollarSign }]
       : []),
-    { title: "Análises", href: "/analises", icon: Brain },
+    { title: "Chuvas", href: "/chuvas", icon: CloudRain },
     { title: "Agente", href: "/agente", icon: Bot },
   ];
 

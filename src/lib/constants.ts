@@ -4,7 +4,7 @@ export const FARM_NAME = "Fazenda Primavera";
 interface NavItem {
   title: string;
   href: string;
-  icon: "LayoutDashboard" | "Wheat" | "DollarSign" | "ClipboardList" | "Map" | "Bot" | "Settings" | "Brain";
+  icon: "LayoutDashboard" | "Wheat" | "DollarSign" | "ClipboardList" | "Map" | "Bot" | "Settings" | "Brain" | "CloudRain";
   ownerOnly?: boolean;
 }
 
@@ -15,6 +15,7 @@ export const NAV_ITEMS: NavItem[] = [
   { title: "Análises IA", href: "/analises", icon: "Brain" },
   { title: "Consultoria", href: "/consultoria", icon: "ClipboardList" },
   { title: "Talhões", href: "/talhoes", icon: "Map" },
+  { title: "Chuvas", href: "/chuvas", icon: "CloudRain" },
   { title: "Agente IA", href: "/agente", icon: "Bot" },
   { title: "Configurações", href: "/configuracoes", icon: "Settings" },
 ];
@@ -62,4 +63,22 @@ export const ACTIVITY_STATUS_LABELS: Record<string, string> = {
   in_progress: "Em Andamento",
   completed: "Concluído",
   cancelled: "Cancelado",
+};
+
+export const CROP_WATER_NEEDS: Record<
+  string,
+  { minMm: number; maxMm: number; cycleDays: number; peakStage: string }
+> = {
+  soy: {
+    minMm: 450,
+    maxMm: 800,
+    cycleDays: 120,
+    peakStage: "Floração e enchimento (R1-R5)",
+  },
+  corn: {
+    minMm: 400,
+    maxMm: 600,
+    cycleDays: 130,
+    peakStage: "Pendoamento e enchimento (VT-R3)",
+  },
 };

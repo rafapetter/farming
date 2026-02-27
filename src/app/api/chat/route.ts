@@ -21,9 +21,12 @@ import {
   loans,
   consultingVisits,
   chatSessions,
+  rainEntries,
 } from "@/server/db/schema";
 import { eq, sum, count, and, desc, ne } from "drizzle-orm";
 import { auth } from "@/lib/auth";
+import { getMergedRainData, fetchForecastRain } from "@/lib/rain-api";
+import { computeCropWaterStatus } from "@/lib/crop-water";
 
 const SYSTEM_PROMPT = `Você é o "Agente Fazenda", um assistente agrícola inteligente da Fazenda Primavera.
 
@@ -47,6 +50,9 @@ Suas capacidades:
 - Consultar talhões e suas áreas
 - Consultar visitas de consultoria
 - Registrar novos insumos, serviços, atividades e gastos
+- Consultar dados de chuva/precipitação (histórico e previsão 14 dias via Open-Meteo)
+- Consultar necessidade hídrica das culturas e comparar com chuva recebida
+- Registrar medições manuais de chuva
 - Gerar relatórios resumidos
 - Fornecer insights e recomendações agrícolas
 
@@ -975,6 +981,179 @@ export async function POST(req: Request) {
             };
           } catch {
             return { error: "Erro ao consultar serviços" };
+          }
+        },
+      }),
+
+      // ─── Rain/Precipitation Tools ─────────────────────────────────────
+
+      consultarChuvas: tool({
+        description:
+          "Consulta dados de chuva/precipitação da fazenda em um período. Usa dados da API Open-Meteo combinados com medições manuais.",
+        inputSchema: z.object({
+          dataInicio: z
+            .string()
+            .describe("Data de início no formato YYYY-MM-DD"),
+          dataFim: z.string().describe("Data de fim no formato YYYY-MM-DD"),
+        }),
+        execute: async ({ dataInicio, dataFim }) => {
+          try {
+            const data = await getMergedRainData(dataInicio, dataFim);
+            const total = data.reduce((s, d) => s + d.precipitationMm, 0);
+            const rainyDays = data.filter(
+              (d) => d.precipitationMm > 0
+            ).length;
+            const maxDay = data.reduce(
+              (max, d) =>
+                d.precipitationMm > max.precipitationMm ? d : max,
+              { date: "", precipitationMm: 0, source: "api" as const }
+            );
+
+            return {
+              periodo: `${dataInicio} a ${dataFim}`,
+              totalMm: total.toFixed(1),
+              diasComChuva: rainyDays,
+              totalDias: data.length,
+              maiorRegistro: {
+                data: maxDay.date,
+                mm: maxDay.precipitationMm.toFixed(1),
+              },
+              dadosDiarios: data.slice(-14).map((d) => ({
+                data: d.date,
+                mm: d.precipitationMm.toFixed(1),
+                fonte: d.source === "manual" ? "Manual" : "API",
+              })),
+            };
+          } catch {
+            return { error: "Erro ao consultar dados de chuva" };
+          }
+        },
+      }),
+
+      consultarPrevisaoChuva: tool({
+        description:
+          "Consulta a previsão de chuva para os próximos 14 dias na fazenda.",
+        inputSchema: z.object({}),
+        execute: async () => {
+          try {
+            const data = await fetchForecastRain();
+            const total = data.reduce((s, d) => s + d.precipitationMm, 0);
+
+            return {
+              periodo: `${data[0]?.date} a ${data[data.length - 1]?.date}`,
+              totalPrevistoMm: total.toFixed(1),
+              diasComChuva: data.filter((d) => d.precipitationMm > 0).length,
+              previsao: data.map((d) => ({
+                data: d.date,
+                mm: d.precipitationMm.toFixed(1),
+              })),
+            };
+          } catch {
+            return { error: "Erro ao consultar previsão" };
+          }
+        },
+      }),
+
+      consultarNecessidadeHidrica: tool({
+        description:
+          "Consulta a necessidade hídrica das culturas e compara com a chuva recebida. Ajuda a avaliar se as lavouras estão recebendo água suficiente.",
+        inputSchema: z.object({
+          tipoCultura: z
+            .enum(["soy", "corn"])
+            .optional()
+            .describe(
+              "Tipo de cultura (opcional, se não informado mostra todas)"
+            ),
+        }),
+        execute: async ({ tipoCultura }) => {
+          try {
+            const allSeasons = await db
+              .select()
+              .from(cropSeasons)
+              .where(eq(cropSeasons.status, "active"));
+
+            const filteredSeasons = tipoCultura
+              ? allSeasons.filter((s) => s.cropType === tipoCultura)
+              : allSeasons;
+
+            const results = [];
+            for (const season of filteredSeasons) {
+              const start = season.plantingDate ?? "2025-10-01";
+              const end = new Date().toISOString().split("T")[0];
+              const rainData = await getMergedRainData(start, end);
+              const accMm = rainData.reduce(
+                (s, d) => s + d.precipitationMm,
+                0
+              );
+
+              const status = computeCropWaterStatus(
+                season.cropType,
+                season.plantingDate,
+                season.harvestDate,
+                accMm
+              );
+
+              results.push({
+                safra: season.name,
+                cultura: status.cropLabel,
+                area: `${season.totalAreaHa} ha`,
+                chuvaRecebida: `${status.accumulatedMm.toFixed(0)} mm`,
+                necessidadeMinima: `${status.minMm} mm`,
+                necessidadeIdeal: `${status.maxMm} mm`,
+                diasDecorridos: status.daysElapsed,
+                esperadoAteHoje: `${status.expectedMmToDate.toFixed(0)} mm`,
+                status:
+                  status.status === "deficit"
+                    ? "DÉFICIT HÍDRICO"
+                    : status.status === "excess"
+                      ? "EXCESSO"
+                      : "ADEQUADO",
+                percentualDoIdeal: `${status.percentOfIdeal.toFixed(0)}%`,
+                fasesCriticas: status.peakStage,
+              });
+            }
+
+            return { culturas: results };
+          } catch {
+            return { error: "Erro ao consultar necessidade hídrica" };
+          }
+        },
+      }),
+
+      registrarChuva: tool({
+        description: "Registra uma medição manual de chuva na fazenda.",
+        inputSchema: z.object({
+          data: z.string().describe("Data no formato YYYY-MM-DD"),
+          volumeMm: z
+            .number()
+            .describe("Volume de chuva em milímetros"),
+          observacoes: z
+            .string()
+            .optional()
+            .describe("Observações sobre a chuva"),
+        }),
+        execute: async ({ data, volumeMm, observacoes }) => {
+          try {
+            const [farm] = await db
+              .select({ id: farms.id })
+              .from(farms)
+              .limit(1);
+            if (!farm) return { error: "Fazenda não encontrada" };
+
+            await db.insert(rainEntries).values({
+              farmId: farm.id,
+              date: data,
+              volumeMm: volumeMm.toString(),
+              source: "manual",
+              notes: observacoes ?? null,
+            });
+
+            return {
+              sucesso: true,
+              mensagem: `Chuva de ${volumeMm} mm registrada em ${new Date(data + "T12:00:00").toLocaleDateString("pt-BR")}`,
+            };
+          } catch {
+            return { error: "Erro ao registrar chuva" };
           }
         },
       }),

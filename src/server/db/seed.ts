@@ -13,6 +13,8 @@ async function seed() {
   // ─── Truncate all tables ──────────────────────────────────────────────────
   console.log("Truncating existing data...");
   await db.execute(rawSql`TRUNCATE TABLE
+    rain_cache,
+    rain_entries,
     ai_insights,
     chat_messages,
     chat_sessions,
@@ -64,6 +66,8 @@ async function seed() {
     .values({
       name: "Fazenda Primavera",
       location: "Goiás, Brasil",
+      latitude: "-15.9390",
+      longitude: "-49.8140",
       totalAreaHa: "39.23",
       ownerId: owner.id,
     })

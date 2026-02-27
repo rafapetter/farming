@@ -13,6 +13,7 @@ import {
   Sprout,
   LogOut,
   Brain,
+  CloudRain,
 } from "lucide-react";
 import {
   Sidebar,
@@ -38,6 +39,7 @@ const iconMap = {
   Bot,
   Settings,
   Brain,
+  CloudRain,
 } as const;
 
 interface AppSidebarProps {
