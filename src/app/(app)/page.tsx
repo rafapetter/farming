@@ -217,18 +217,18 @@ export default async function DashboardPage() {
       </div>
 
       {/* Summary Cards - All clickable */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
         <Link href="/safras">
           <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 p-3 sm:p-6 sm:pb-2">
+              <CardTitle className="text-xs sm:text-sm font-medium">
                 Safras Ativas
               </CardTitle>
-              <Wheat className="h-4 w-4 text-muted-foreground" />
+              <Wheat className="h-4 w-4 text-muted-foreground shrink-0" />
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{seasons.length}</div>
-              <p className="text-xs text-muted-foreground">
+            <CardContent className="p-3 pt-0 sm:p-6 sm:pt-0">
+              <div className="text-xl sm:text-2xl font-bold">{seasons.length}</div>
+              <p className="text-xs text-muted-foreground truncate">
                 {seasonNames || "Nenhuma safra ativa"}
               </p>
             </CardContent>
@@ -237,21 +237,21 @@ export default async function DashboardPage() {
 
         <Link href="/talhoes">
           <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 p-3 sm:p-6 sm:pb-2">
+              <CardTitle className="text-xs sm:text-sm font-medium">
                 Área Total
               </CardTitle>
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+              <TrendingUp className="h-4 w-4 text-muted-foreground shrink-0" />
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
+            <CardContent className="p-3 pt-0 sm:p-6 sm:pt-0">
+              <div className="text-xl sm:text-2xl font-bold truncate">
                 {totalArea.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} ha
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground truncate">
                 {seasons
                   .map(
                     (s) =>
-                      `${s.totalAreaHa} ha ${s.cropType === "soy" ? "soja" : s.cropType === "corn" ? "milho" : s.cropType}`
+                      `${s.totalAreaHa}ha ${s.cropType === "soy" ? "soja" : "milho"}`
                   )
                   .join(" + ")}
               </p>
@@ -261,14 +261,14 @@ export default async function DashboardPage() {
 
         <Link href={seasons[0] ? `/safras/${seasons[0].id}/insumos` : "/safras"}>
           <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 p-3 sm:p-6 sm:pb-2">
+              <CardTitle className="text-xs sm:text-sm font-medium">
                 Custos Totais
               </CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
+              <DollarSign className="h-4 w-4 text-muted-foreground shrink-0" />
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
+            <CardContent className="p-3 pt-0 sm:p-6 sm:pt-0">
+              <div className="text-lg sm:text-2xl font-bold truncate">
                 {totalCosts.toLocaleString("pt-BR", {
                   style: "currency",
                   currency: "BRL",
@@ -284,14 +284,14 @@ export default async function DashboardPage() {
 
         <Link href={seasons[0] ? `/safras/${seasons[0].id}/planejamento` : "/safras"}>
           <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 p-3 sm:p-6 sm:pb-2">
+              <CardTitle className="text-xs sm:text-sm font-medium">
                 Próximas Atividades
               </CardTitle>
-              <CalendarDays className="h-4 w-4 text-muted-foreground" />
+              <CalendarDays className="h-4 w-4 text-muted-foreground shrink-0" />
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{upcomingActivities.length}</div>
+            <CardContent className="p-3 pt-0 sm:p-6 sm:pt-0">
+              <div className="text-xl sm:text-2xl font-bold">{upcomingActivities.length}</div>
               <p className="text-xs text-muted-foreground">
                 Atividades planejadas
               </p>

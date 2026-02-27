@@ -152,18 +152,18 @@ export default async function FinanceiroPage({
       </div>
 
       {/* Summary Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
         <Card>
-          <CardHeader className="pb-2">
+          <CardHeader className="pb-2 p-3 sm:p-6 sm:pb-2">
             <div className="flex items-center justify-between">
               <CardTitle className="text-xs text-muted-foreground">
-                Despesas Pessoais {selectedYear}
+                Despesas {selectedYear}
               </CardTitle>
-              <TrendingDown className="h-4 w-4 text-red-500" />
+              <TrendingDown className="h-4 w-4 text-red-500 shrink-0" />
             </div>
           </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-red-600">
+          <CardContent className="p-3 pt-0 sm:p-6 sm:pt-0">
+            <p className="text-lg sm:text-2xl font-bold text-red-600 truncate">
               {formatCurrency(yearExpenses)}
             </p>
             <p className="text-xs text-muted-foreground mt-1">
@@ -173,16 +173,16 @@ export default async function FinanceiroPage({
         </Card>
 
         <Card>
-          <CardHeader className="pb-2">
+          <CardHeader className="pb-2 p-3 sm:p-6 sm:pb-2">
             <div className="flex items-center justify-between">
               <CardTitle className="text-xs text-muted-foreground">
                 Receitas {selectedYear}
               </CardTitle>
-              <TrendingUp className="h-4 w-4 text-green-500" />
+              <TrendingUp className="h-4 w-4 text-green-500 shrink-0" />
             </div>
           </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-green-600">
+          <CardContent className="p-3 pt-0 sm:p-6 sm:pt-0">
+            <p className="text-lg sm:text-2xl font-bold text-green-600 truncate">
               {formatCurrency(yearIncome)}
             </p>
             <p className="text-xs text-muted-foreground mt-1">
@@ -193,36 +193,36 @@ export default async function FinanceiroPage({
 
         <Link href="/safras">
           <Card className="hover:bg-muted/50 transition-colors cursor-pointer h-full">
-            <CardHeader className="pb-2">
+            <CardHeader className="pb-2 p-3 sm:p-6 sm:pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-xs text-muted-foreground">
-                  Custos de Produção
+                  Custos Produção
                 </CardTitle>
-                <DollarSign className="h-4 w-4 text-orange-500" />
+                <DollarSign className="h-4 w-4 text-orange-500 shrink-0" />
               </div>
             </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold text-orange-600">
+            <CardContent className="p-3 pt-0 sm:p-6 sm:pt-0">
+              <p className="text-lg sm:text-2xl font-bold text-orange-600 truncate">
                 {formatCurrency(totalProductionCost)}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
-                Insumos + Serviços (todas safras)
+                Insumos + Serviços
               </p>
             </CardContent>
           </Card>
         </Link>
 
         <Card>
-          <CardHeader className="pb-2">
+          <CardHeader className="pb-2 p-3 sm:p-6 sm:pb-2">
             <div className="flex items-center justify-between">
               <CardTitle className="text-xs text-muted-foreground">
                 Empréstimos
               </CardTitle>
-              <Landmark className="h-4 w-4 text-blue-500" />
+              <Landmark className="h-4 w-4 text-blue-500 shrink-0" />
             </div>
           </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-blue-600">
+          <CardContent className="p-3 pt-0 sm:p-6 sm:pt-0">
+            <p className="text-lg sm:text-2xl font-bold text-blue-600 truncate">
               {formatCurrency(totalLoanPayable)}
             </p>
             <p className="text-xs text-muted-foreground mt-1">
@@ -320,15 +320,15 @@ export default async function FinanceiroPage({
                         <TableBody>
                           {monthEntries.map((entry) => (
                             <TableRow key={entry.id}>
-                              <TableCell className="font-medium">
+                              <TableCell className="font-medium text-xs sm:text-sm max-w-[180px] sm:max-w-none truncate">
                                 {entry.category}
                                 {entry.description && (
-                                  <span className="text-muted-foreground ml-1">
+                                  <span className="text-muted-foreground ml-1 hidden sm:inline">
                                     - {entry.description}
                                   </span>
                                 )}
                               </TableCell>
-                              <TableCell className="text-right">
+                              <TableCell className="text-right text-xs sm:text-sm whitespace-nowrap">
                                 {formatCurrency(entry.amount)}
                               </TableCell>
                             </TableRow>
