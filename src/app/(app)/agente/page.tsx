@@ -10,6 +10,9 @@ import {
   History,
   Trash2,
   ChevronLeft,
+  Paperclip,
+  FileText,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -34,11 +37,15 @@ function timeAgo(date: Date | null): string {
   return `${days}d`;
 }
 
+const ACCEPTED_TYPES = "image/png,image/jpeg,image/webp,application/pdf";
+
 export default function AgentePage() {
   const [inputValue, setInputValue] = useState("");
   const [isListening, setIsListening] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [attachments, setAttachments] = useState<File[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const {
     messages,
@@ -57,10 +64,31 @@ export default function AgentePage() {
   }, [messages]);
 
   async function handleSend() {
-    if (!inputValue.trim() || isLoading) return;
-    await ensureSession();
-    sendMessage({ text: inputValue.trim() });
+    const text = inputValue.trim();
+    if ((!text && attachments.length === 0) || isLoading) return;
+    const sessionId = await ensureSession();
+    if (!sessionId) return;
+
+    if (attachments.length > 0) {
+      const dt = new DataTransfer();
+      attachments.forEach((f) => dt.items.add(f));
+      sendMessage({ text: text || "Analise este arquivo", files: dt.files });
+    } else {
+      sendMessage({ text });
+    }
     setInputValue("");
+    setAttachments([]);
+  }
+
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files;
+    if (!files) return;
+    setAttachments((prev) => [...prev, ...Array.from(files)]);
+    e.target.value = "";
+  }
+
+  function removeAttachment(index: number) {
+    setAttachments((prev) => prev.filter((_, i) => i !== index));
   }
 
   function toggleVoice() {
@@ -101,6 +129,8 @@ export default function AgentePage() {
       handleSend();
     }
   }
+
+  const hasContent = inputValue.trim() || attachments.length > 0;
 
   // Show session history view
   if (showHistory) {
@@ -246,11 +276,13 @@ export default function AgentePage() {
                 ].map((suggestion) => (
                   <button
                     key={suggestion}
+                    disabled={isLoading}
                     onClick={async () => {
-                      await ensureSession();
+                      const sessionId = await ensureSession();
+                      if (!sessionId) return;
                       sendMessage({ text: suggestion });
                     }}
-                    className="rounded-lg border p-2.5 text-left text-xs hover:bg-muted transition-colors"
+                    className="rounded-lg border p-2.5 text-left text-xs hover:bg-muted transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {suggestion}
                   </button>
@@ -260,7 +292,11 @@ export default function AgentePage() {
           )}
           {messages.map((message) => {
             const text = getMessageText(message);
-            if (!text) return null;
+            const fileParts = message.parts.filter(
+              (p): p is { type: "file"; mediaType: string; url: string } =>
+                p.type === "file"
+            );
+            if (!text && fileParts.length === 0) return null;
             const isUser = message.role === "user";
             return (
               <div
@@ -282,11 +318,39 @@ export default function AgentePage() {
                   className={`max-w-[80%] ${isUser ? "bg-primary text-primary-foreground" : ""}`}
                 >
                   <CardContent className="p-3">
-                    {isUser ? (
-                      <p className="text-sm whitespace-pre-wrap">{text}</p>
-                    ) : (
-                      <MarkdownMessage content={text} className="text-sm" />
+                    {fileParts.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mb-2">
+                        {fileParts.map((fp, i) =>
+                          fp.mediaType.startsWith("image/") ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              key={i}
+                              src={fp.url}
+                              alt="Anexo"
+                              className="rounded max-h-40 max-w-full object-cover"
+                            />
+                          ) : (
+                            <div
+                              key={i}
+                              className={`flex items-center gap-1.5 rounded border px-2 py-1 text-xs ${
+                                isUser
+                                  ? "border-primary-foreground/30"
+                                  : "border-border"
+                              }`}
+                            >
+                              <FileText className="h-3.5 w-3.5 shrink-0" />
+                              <span>PDF</span>
+                            </div>
+                          )
+                        )}
+                      </div>
                     )}
+                    {text &&
+                      (isUser ? (
+                        <p className="text-sm whitespace-pre-wrap">{text}</p>
+                      ) : (
+                        <MarkdownMessage content={text} className="text-sm" />
+                      ))}
                   </CardContent>
                 </Card>
               </div>
@@ -314,8 +378,56 @@ export default function AgentePage() {
         </div>
       </ScrollArea>
 
+      {/* Attachment previews */}
+      {attachments.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-2 border-t pt-2">
+          {attachments.map((file, i) => (
+            <div
+              key={i}
+              className="relative flex items-center gap-1.5 rounded-lg border bg-muted/50 px-2 py-1 text-xs"
+            >
+              {file.type.startsWith("image/") ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={URL.createObjectURL(file)}
+                  alt={file.name}
+                  className="h-10 w-10 rounded object-cover"
+                />
+              ) : (
+                <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+              )}
+              <span className="truncate max-w-[100px]">{file.name}</span>
+              <button
+                onClick={() => removeAttachment(i)}
+                className="ml-0.5 rounded-full p-0.5 hover:bg-muted cursor-pointer"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Input */}
       <div className="mt-4 flex items-end gap-2 border-t pt-4">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={ACCEPTED_TYPES}
+          multiple
+          className="hidden"
+          onChange={handleFileSelect}
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          onClick={() => fileInputRef.current?.click()}
+          className="shrink-0"
+          title="Anexar arquivo"
+        >
+          <Paperclip className="h-4 w-4" />
+        </Button>
         <Button
           type="button"
           variant={isListening ? "destructive" : "outline"}
@@ -340,7 +452,7 @@ export default function AgentePage() {
         <Button
           type="button"
           size="icon"
-          disabled={!inputValue.trim() || isLoading}
+          disabled={!hasContent || isLoading}
           onClick={handleSend}
           className="shrink-0"
         >

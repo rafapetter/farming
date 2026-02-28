@@ -21,32 +21,26 @@ export type ChatSession = {
 export function usePersistedChat() {
   const [chatId, setChatId] = useState<string | null>(null);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
-  const [initialMessages, setInitialMessages] = useState<UIMessage[]>([]);
-  const creatingRef = useRef(false);
+  const pendingCreation = useRef<Promise<string | null> | null>(null);
 
+  // chatIdRef is the source of truth for the transport layer.
+  // It is managed independently from chatId state to avoid
+  // useChat re-creating its internal Chat instance mid-send.
   const chatIdRef = useRef<string | null>(null);
-  chatIdRef.current = chatId;
 
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
         api: "/api/chat",
-        prepareSendMessagesRequest({ messages }) {
-          return {
-            body: {
-              message: messages[messages.length - 1],
-              id: chatIdRef.current,
-            },
-          };
-        },
+        body: () => ({ chatId: chatIdRef.current }),
       }),
     []
   );
 
+  // No `id` prop — single chat instance that we manage via setMessages.
+  // This prevents useChat from switching instances when chatId changes.
   const { messages, sendMessage, status, setMessages } = useChat({
     transport,
-    id: chatId ?? undefined,
-    messages: initialMessages,
   });
 
   const isLoading = status === "streaming" || status === "submitted";
@@ -75,9 +69,8 @@ export function usePersistedChat() {
         .then((msgs) => {
           const uiMessages = msgs as UIMessage[];
           if (uiMessages.length > 0) {
-            setChatId(mostRecent.id);
             chatIdRef.current = mostRecent.id;
-            setInitialMessages(uiMessages);
+            setChatId(mostRecent.id);
             setMessages(uiMessages);
           }
         })
@@ -88,18 +81,16 @@ export function usePersistedChat() {
   }, [sessions, setMessages]);
 
   const startNewChat = useCallback(() => {
-    setChatId(null);
     chatIdRef.current = null;
-    setInitialMessages([]);
+    setChatId(null);
     setMessages([]);
   }, [setMessages]);
 
   const loadSession = useCallback(
     async (sessionId: string) => {
       const msgs = (await loadChatMessages(sessionId)) as UIMessage[];
-      setChatId(sessionId);
       chatIdRef.current = sessionId;
-      setInitialMessages(msgs);
+      setChatId(sessionId);
       setMessages(msgs);
     },
     [setMessages]
@@ -108,31 +99,33 @@ export function usePersistedChat() {
   const removeSession = useCallback(
     async (sessionId: string) => {
       await deleteChatSession(sessionId);
-      if (chatId === sessionId) {
+      if (chatIdRef.current === sessionId) {
         startNewChat();
       }
       await refreshSessions();
     },
-    [chatId, startNewChat, refreshSessions]
+    [startNewChat, refreshSessions]
   );
 
   const ensureSession = useCallback(async () => {
     if (chatIdRef.current) return chatIdRef.current;
-    if (creatingRef.current) return null;
+    if (pendingCreation.current) return pendingCreation.current;
 
-    creatingRef.current = true;
-    try {
-      const result = await createChatSession();
-      if ("id" in result && result.id) {
-        const newId: string = result.id;
-        setChatId(newId);
-        chatIdRef.current = newId;
-        return newId;
+    pendingCreation.current = (async () => {
+      try {
+        const result = await createChatSession();
+        if ("id" in result && result.id) {
+          chatIdRef.current = result.id;
+          setChatId(result.id);
+          return result.id;
+        }
+        return null;
+      } finally {
+        pendingCreation.current = null;
       }
-    } finally {
-      creatingRef.current = false;
-    }
-    return null;
+    })();
+
+    return pendingCreation.current;
   }, []);
 
   // Refresh sessions after a response completes

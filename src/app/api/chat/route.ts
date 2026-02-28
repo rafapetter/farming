@@ -137,25 +137,9 @@ export async function POST(req: Request) {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  const { message, id: chatId } = await req.json();
-
-  // Load previous messages from DB if we have a session ID
-  let previousMessages: UIMessage[] = [];
-  if (chatId) {
-    try {
-      const [chatSession] = await db
-        .select({ messages: chatSessions.messages })
-        .from(chatSessions)
-        .where(eq(chatSessions.id, chatId))
-        .limit(1);
-      previousMessages = (chatSession?.messages as UIMessage[]) ?? [];
-    } catch {
-      // ignore
-    }
-  }
-
-  // Append new message from client
-  const messages: UIMessage[] = [...previousMessages, message];
+  const body = await req.json();
+  const chatId: string | null = body.chatId ?? null;
+  const messages: UIMessage[] = body.messages ?? [];
 
   // Build history context from other sessions
   const historyContext = await buildHistoryContext(session.user.id, chatId);

@@ -58,6 +58,15 @@ export const ACTIVITY_TYPE_LABELS: Record<string, string> = {
   other: "Outro",
 };
 
+export const ACTIVITY_TYPE_COLORS: Record<string, string> = {
+  soil_prep: "border-l-amber-500",
+  planting: "border-l-green-500",
+  spraying: "border-l-red-500",
+  fertilizing: "border-l-blue-500",
+  harvest: "border-l-yellow-500",
+  other: "border-l-gray-400",
+};
+
 export const ACTIVITY_STATUS_LABELS: Record<string, string> = {
   planned: "Planejado",
   in_progress: "Em Andamento",
