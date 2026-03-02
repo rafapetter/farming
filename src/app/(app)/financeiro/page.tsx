@@ -1,6 +1,6 @@
 import { db } from "@/server/db";
 import { financialEntries, cropSeasons, inputs, services, loans } from "@/server/db/schema";
-import { eq, sum } from "drizzle-orm";
+import { eq, sum, sql } from "drizzle-orm";
 import {
   Card,
   CardContent,
@@ -23,6 +23,7 @@ import { DollarSign, TrendingDown, TrendingUp, Landmark } from "lucide-react";
 import { FinancialFormDialog } from "@/components/forms/financial-form-dialog";
 import Link from "next/link";
 import { FinancialCalculator } from "@/components/forms/financial-calculator";
+import { FinanceiroExport } from "@/components/financeiro-export";
 
 const MONTHS = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -114,7 +115,24 @@ export default async function FinanceiroPage({
   );
 
   const activeMonths = Array.from(entriesByMonth.keys()).sort();
-  const availableYears = [2025, 2026];
+
+  // Dynamic year filter - get distinct years from data
+  let availableYears: number[] = [];
+  try {
+    const yearsResult = await db
+      .selectDistinct({ year: financialEntries.year })
+      .from(financialEntries)
+      .orderBy(financialEntries.year);
+    availableYears = yearsResult
+      .map((r) => r.year)
+      .filter((y): y is number => y !== null);
+    if (!availableYears.includes(currentYear)) {
+      availableYears.push(currentYear);
+      availableYears.sort();
+    }
+  } catch {
+    availableYears = [currentYear];
+  }
 
   const categoryTotals = new Map<string, number>();
   for (const entry of expenses) {
@@ -147,6 +165,7 @@ export default async function FinanceiroPage({
               </Badge>
             </Link>
           ))}
+          <FinanceiroExport entries={entries} year={selectedYear} />
           <FinancialFormDialog />
         </div>
       </div>

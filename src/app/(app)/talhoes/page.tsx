@@ -1,5 +1,5 @@
 import { db } from "@/server/db";
-import { fields } from "@/server/db/schema";
+import { fields, farms } from "@/server/db/schema";
 import {
   Card,
   CardContent,
@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Map, MapPin } from "lucide-react";
 import { FieldFormDialog } from "@/components/forms/field-form-dialog";
 import { FieldEditDialog } from "@/components/forms/field-edit-dialog";
+import { FarmMap } from "@/components/farm-map";
 
 export default async function TalhoesPage() {
   let fieldsList: Array<{
@@ -19,8 +20,18 @@ export default async function TalhoesPage() {
     notes: string | null;
   }> = [];
 
+  let farmLocation: { latitude: number; longitude: number } | null = null;
+
   try {
     fieldsList = await db.select().from(fields).orderBy(fields.name);
+
+    const [farm] = await db.select().from(farms).limit(1);
+    if (farm?.latitude && farm?.longitude) {
+      farmLocation = {
+        latitude: parseFloat(farm.latitude),
+        longitude: parseFloat(farm.longitude),
+      };
+    }
   } catch {
     // DB not connected
   }
@@ -57,6 +68,15 @@ export default async function TalhoesPage() {
             </Badge>
           )}
         </div>
+      )}
+
+      {/* Map */}
+      {farmLocation && fieldsList.length > 0 && (
+        <FarmMap
+          latitude={farmLocation.latitude}
+          longitude={farmLocation.longitude}
+          fields={fieldsList}
+        />
       )}
 
       {fieldsList.length === 0 ? (

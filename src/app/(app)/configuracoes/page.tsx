@@ -28,6 +28,7 @@ import {
   Scale,
   Calendar,
 } from "lucide-react";
+import { LoanFormDialog } from "@/components/forms/loan-form-dialog";
 
 export default async function ConfiguracoesPage() {
   const session = await auth();
@@ -49,11 +50,16 @@ export default async function ConfiguracoesPage() {
     harvestDate: string | null;
   }> = [];
   let farmLoans: Array<{
+    id: string;
     description: string;
     bank: string | null;
     totalAmount: string;
     amountPayable: string | null;
+    interestRate: string | null;
+    startDate: string | null;
+    endDate: string | null;
     status: string | null;
+    notes: string | null;
   }> = [];
   let totalInputsCost = 0;
   let totalServicesCost = 0;
@@ -73,13 +79,7 @@ export default async function ConfiguracoesPage() {
       seasons = await db.select().from(cropSeasons).where(eq(cropSeasons.farmId, farm.id));
 
       farmLoans = await db
-        .select({
-          description: loans.description,
-          bank: loans.bank,
-          totalAmount: loans.totalAmount,
-          amountPayable: loans.amountPayable,
-          status: loans.status,
-        })
+        .select()
         .from(loans)
         .where(eq(loans.farmId, farm.id));
 
@@ -323,20 +323,25 @@ export default async function ConfiguracoesPage() {
       </div>
 
       {/* Loans */}
-      {farmLoans.length > 0 && (
-        <Card>
-          <CardHeader>
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Landmark className="h-5 w-5 text-primary" />
               <CardTitle className="text-base">Empréstimos</CardTitle>
             </div>
-            <CardDescription>Financiamentos bancários</CardDescription>
-          </CardHeader>
-          <CardContent>
+            <LoanFormDialog />
+          </div>
+          <CardDescription>Financiamentos bancários</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {farmLoans.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Nenhum empréstimo registrado.</p>
+          ) : (
             <div className="space-y-3">
-              {farmLoans.map((loan, i) => (
+              {farmLoans.map((loan) => (
                 <div
-                  key={i}
+                  key={loan.id}
                   className="flex items-center justify-between rounded-lg border p-3"
                 >
                   <div className="space-y-1">
@@ -346,15 +351,20 @@ export default async function ConfiguracoesPage() {
                       {fmt(parseFloat(loan.totalAmount))}
                       {loan.amountPayable &&
                         ` — A pagar: ${fmt(parseFloat(loan.amountPayable))}`}
+                      {loan.interestRate &&
+                        ` — Juros: ${loan.interestRate}%`}
                     </p>
                   </div>
-                  <Badge
-                    variant={
-                      loan.status === "active" ? "destructive" : "secondary"
-                    }
-                  >
-                    {loan.status === "active" ? "Em aberto" : "Quitado"}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <LoanFormDialog loan={loan} />
+                    <Badge
+                      variant={
+                        loan.status === "active" ? "destructive" : "secondary"
+                      }
+                    >
+                      {loan.status === "active" ? "Em aberto" : "Quitado"}
+                    </Badge>
+                  </div>
                 </div>
               ))}
               <div className="border-t pt-2 flex justify-between text-sm">
@@ -369,9 +379,9 @@ export default async function ConfiguracoesPage() {
                 </span>
               </div>
             </div>
-          </CardContent>
-        </Card>
-      )}
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

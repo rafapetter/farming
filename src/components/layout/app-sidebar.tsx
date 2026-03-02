@@ -14,6 +14,7 @@ import {
   LogOut,
   Brain,
   CloudRain,
+  HandCoins,
 } from "lucide-react";
 import {
   Sidebar,
@@ -40,6 +41,7 @@ const iconMap = {
   Settings,
   Brain,
   CloudRain,
+  HandCoins,
 } as const;
 
 interface AppSidebarProps {

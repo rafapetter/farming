@@ -1,4 +1,4 @@
-const CACHE_NAME = "fazenda-digital-v1";
+const CACHE_NAME = "fazenda-digital-v2";
 const STATIC_ASSETS = ["/", "/login", "/manifest.json"];
 
 self.addEventListener("install", (event) => {
@@ -29,6 +29,27 @@ self.addEventListener("fetch", (event) => {
   // Skip API routes and auth
   if (url.pathname.startsWith("/api/")) return;
 
+  // For navigation requests, use network-first strategy
+  if (event.request.mode === "navigate") {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, clone);
+            });
+          }
+          return response;
+        })
+        .catch(() =>
+          caches.match(event.request).then((cached) => cached || caches.match("/"))
+        )
+    );
+    return;
+  }
+
+  // For static assets, use stale-while-revalidate
   event.respondWith(
     caches.match(event.request).then((cached) => {
       const fetching = fetch(event.request)

@@ -110,3 +110,29 @@ export const rainEntryFormSchema = z.object({
 });
 
 export type RainEntryFormValues = z.infer<typeof rainEntryFormSchema>;
+
+export const loanFormSchema = z.object({
+  description: z.string().min(1, "Descrição é obrigatória"),
+  bank: z.string().optional(),
+  totalAmount: z.coerce.number().min(0.01, "Valor deve ser maior que zero"),
+  amountPayable: z.coerce.number().min(0).optional(),
+  interestRate: z.coerce.number().min(0).optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+  status: z.string().default("active"),
+  notes: z.string().optional(),
+});
+
+export type LoanFormValues = z.infer<typeof loanFormSchema>;
+
+export const advanceFormSchema = z.object({
+  seasonId: z.string().min(1, "Safra é obrigatória"),
+  recipient: z.string().min(1, "Destinatário é obrigatório"),
+  product: z.string().optional(),
+  quantity: z.string().optional(),
+  value: z.coerce.number().min(0).optional(),
+  date: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+export type AdvanceFormValues = z.infer<typeof advanceFormSchema>;

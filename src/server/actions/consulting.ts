@@ -23,12 +23,23 @@ export async function createConsultingVisit(formData: FormData) {
   const [farm] = await db.select({ id: farms.id }).from(farms).limit(1);
   if (!farm) return { error: "Fazenda não encontrada" };
 
+  const photosRaw = formData.get("photos");
+  let photos: string[] | null = null;
+  if (photosRaw && typeof photosRaw === "string") {
+    try {
+      photos = JSON.parse(photosRaw);
+    } catch {
+      // ignore invalid JSON
+    }
+  }
+
   await db.insert(consultingVisits).values({
     farmId: farm.id,
     consultantId: session.user.id,
     visitDate: data.visitDate,
     activities: data.activities,
     recommendations: data.recommendations || null,
+    photos: photos,
   });
 
   revalidatePath("/consultoria");
