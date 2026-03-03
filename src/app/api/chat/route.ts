@@ -1395,7 +1395,7 @@ export async function POST(req: Request) {
   if (isAnalysis) {
     try {
       const analysisResult = await generateText({
-        model: google("gemini-2.0-flash"),
+        model: google("gemini-2.5-flash"),
         system: SYSTEM_PROMPT,
         messages: modelMessages,
         tools: allTools,
@@ -1417,7 +1417,7 @@ export async function POST(req: Request) {
 
   // Chat mode: stream response
   const result = streamText({
-    model: google("gemini-2.0-flash"),
+    model: google("gemini-2.5-flash"),
     system: SYSTEM_PROMPT + historyContext,
     messages: modelMessages,
     tools: allTools,
