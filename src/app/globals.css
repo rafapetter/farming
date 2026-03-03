@@ -124,3 +124,8 @@
     @apply bg-background text-foreground;
   }
 }
+
+.leaflet-container {
+  z-index: 0;
+  isolation: isolate;
+}

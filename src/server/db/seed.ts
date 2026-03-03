@@ -650,7 +650,9 @@ async function seed() {
   console.log("Consulting visits created:", visits.length);
 
   // ─── Yield Assessment (Main - Fazenda Primavera) ──────────────────────
-  // From Comparativo sheet general data: Area 32ha, price R$168/saca, 1.5% loss, 30 sacas/ha cost
+  // Realistic soy yield: ~60 sc/ha (3600 kg/ha)
+  // 240000 plants/ha, 30 pods/plant, 2.5 grains/pod = 75 grains/plant
+  // 75 * 0.2g (PMG) = 15g/plant, 15 * 240000 = 3600 kg/ha = 60 sc/ha
   await db.insert(schema.yieldAssessments).values({
     seasonId: soySeason.id,
     cultivarName: "Fazenda Primavera",
@@ -658,21 +660,21 @@ async function seed() {
     rowSpacingM: "0.50",
     plantsPerLinearM: "12.00",
     plantPopulationHa: 240000,
-    pods1Grain: 4,
-    pods2Grains: 8,
-    pods3Grains: 6,
-    pods4Grains: 2,
-    pods5Grains: 0,
-    avgPodsPerPlant: "20.00",
-    avgGrainsPerPod: "2.3000",
-    avgGrainsPerPlant: 46,
-    grainsPerM2: 1104,
-    gramsPerPlant: "9.2000",
-    kgPerHa: "2208.00",
-    sacksPerHa: "36.80",
-    estimatedLossPct: "10.00",
-    pricePerSack: "128.00",
-    productionCostSacks: "40.00",
+    pods1Grain: 3,
+    pods2Grains: 7,
+    pods3Grains: 12,
+    pods4Grains: 6,
+    pods5Grains: 2,
+    avgPodsPerPlant: "30.00",
+    avgGrainsPerPod: "2.5000",
+    avgGrainsPerPlant: 75,
+    grainsPerM2: 1800,
+    gramsPerPlant: "15.0000",
+    kgPerHa: "3600.00",
+    sacksPerHa: "60.00",
+    estimatedLossPct: "5.00",
+    pricePerSack: "110.00",
+    productionCostSacks: "30.00",
   });
 
   console.log("Main yield assessment created (Fazenda Primavera)");

@@ -1,8 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useCallback } from "react";
-import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Card,
   CardContent,
@@ -22,19 +20,30 @@ import {
   Clock,
   ChevronDown,
   ChevronUp,
+  Loader2,
 } from "lucide-react";
-import { MarkdownMessage, getMessageText } from "@/components/ai/markdown-message";
+import { MarkdownMessage } from "@/components/ai/markdown-message";
 
-interface AnalysisResult {
+/* ─── Types ─────────────────────────────────────────────────────────────── */
+
+interface CachedResult {
   id: string;
   label: string;
   content: string;
   timestamp: number;
 }
 
+interface TabState {
+  content: string;
+  isStreaming: boolean;
+  error: string | null;
+}
+
+/* ─── localStorage cache ────────────────────────────────────────────────── */
+
 const STORAGE_KEY = "fazenda-analises";
 
-function loadCachedResults(): Record<string, AnalysisResult> {
+function loadCachedResults(): Record<string, CachedResult> {
   if (typeof window === "undefined") return {};
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -44,11 +53,11 @@ function loadCachedResults(): Record<string, AnalysisResult> {
   }
 }
 
-function saveCachedResults(results: Record<string, AnalysisResult>) {
+function saveCachedResults(results: Record<string, CachedResult>) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(results));
   } catch {
-    // storage full or unavailable
+    /* storage full */
   }
 }
 
@@ -62,6 +71,8 @@ function timeAgo(ts: number): string {
   const days = Math.floor(hours / 24);
   return `${days}d atrás`;
 }
+
+/* ─── Analysis Definitions ──────────────────────────────────────────────── */
 
 const ANALYSIS_PROMPTS = [
   {
@@ -106,68 +117,149 @@ const ANALYSIS_PROMPTS = [
   },
 ];
 
+/* ─── Page Component ────────────────────────────────────────────────────── */
+
 export default function AnalisesPage() {
-  const [activeAnalysis, setActiveAnalysis] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<string | null>(null);
   const [expandedCached, setExpandedCached] = useState<string | null>(null);
-  const [cachedResults, setCachedResults] = useState<Record<string, AnalysisResult>>({});
+  const [cachedResults, setCachedResults] = useState<Record<string, CachedResult>>({});
+  const [tabStates, setTabStates] = useState<Record<string, TabState>>({});
+  const abortControllers = useRef<Record<string, AbortController>>({});
 
   useEffect(() => {
     setCachedResults(loadCachedResults());
   }, []);
 
-  const transport = useMemo(
-    () => new DefaultChatTransport({ api: "/api/chat" }),
-    []
-  );
+  const generateForTab = useCallback(
+    async (tabId: string) => {
+      const analysis = ANALYSIS_PROMPTS.find((a) => a.id === tabId);
+      if (!analysis) return;
 
-  const { messages, sendMessage, status, setMessages } = useChat({ transport });
+      // Cancel any existing generation for this tab
+      abortControllers.current[tabId]?.abort();
+      const controller = new AbortController();
+      abortControllers.current[tabId] = controller;
 
-  const isLoading = status === "streaming" || status === "submitted";
+      setTabStates((prev) => ({
+        ...prev,
+        [tabId]: { content: "", isStreaming: true, error: null },
+      }));
 
-  const lastAssistantMessage = [...messages]
-    .reverse()
-    .find((m) => m.role === "assistant");
-  const responseText = lastAssistantMessage
-    ? getMessageText(lastAssistantMessage)
-    : null;
+      try {
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mode: "analysis",
+            messages: [
+              {
+                id: crypto.randomUUID(),
+                role: "user",
+                parts: [{ type: "text", text: analysis.prompt }],
+              },
+            ],
+          }),
+          signal: controller.signal,
+        });
 
-  // Save completed analysis to cache
-  useEffect(() => {
-    if (activeAnalysis && responseText && !isLoading) {
-      const analysis = ANALYSIS_PROMPTS.find((a) => a.id === activeAnalysis);
-      if (analysis) {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const reader = response.body!.getReader();
+        const decoder = new TextDecoder();
+        let fullText = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          fullText += decoder.decode(value, { stream: true });
+          setTabStates((prev) => ({
+            ...prev,
+            [tabId]: { ...prev[tabId], content: fullText },
+          }));
+        }
+
+        // Cache the completed result
         const updated = {
-          ...cachedResults,
-          [activeAnalysis]: {
-            id: activeAnalysis,
+          ...loadCachedResults(),
+          [tabId]: {
+            id: tabId,
             label: analysis.label,
-            content: responseText,
+            content: fullText,
             timestamp: Date.now(),
           },
         };
-        setCachedResults(updated);
         saveCachedResults(updated);
-      }
-    }
-  }, [responseText, isLoading, activeAnalysis]);
+        setCachedResults(updated);
 
-  const runAnalysis = useCallback(
-    (prompt: string, id: string) => {
-      setActiveAnalysis(id);
-      setExpandedCached(null);
-      setMessages([]);
-      sendMessage({ text: prompt });
+        setTabStates((prev) => ({
+          ...prev,
+          [tabId]: { content: fullText, isStreaming: false, error: null },
+        }));
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name === "AbortError") return;
+        setTabStates((prev) => ({
+          ...prev,
+          [tabId]: {
+            ...prev[tabId],
+            isStreaming: false,
+            error: "Erro ao gerar análise. Tente novamente.",
+          },
+        }));
+      }
     },
-    [setMessages, sendMessage]
+    []
   );
 
-  // Analyses that have cached results (sorted by most recent)
-  const cachedList = ANALYSIS_PROMPTS.filter((a) => cachedResults[a.id])
-    .sort(
-      (a, b) =>
-        (cachedResults[b.id]?.timestamp ?? 0) -
-        (cachedResults[a.id]?.timestamp ?? 0)
-    );
+  function handleTabClick(tabId: string) {
+    setActiveTab(tabId);
+    setExpandedCached(null);
+
+    // If this tab is already streaming or has content, just view it
+    const tabState = tabStates[tabId];
+    if (tabState?.isStreaming || tabState?.content) return;
+
+    // If there's a cached result, just view it (don't regenerate)
+    if (cachedResults[tabId]) return;
+
+    // Otherwise, start generating
+    generateForTab(tabId);
+  }
+
+  function handleRefresh(tabId: string) {
+    setActiveTab(tabId);
+    setExpandedCached(null);
+    generateForTab(tabId);
+  }
+
+  // What to show for the active tab
+  const activeState = activeTab ? tabStates[activeTab] : null;
+  const activeCached = activeTab ? cachedResults[activeTab] : null;
+  const activeContent = activeState?.content || activeCached?.content || null;
+  const activeIsStreaming = activeState?.isStreaming ?? false;
+  const activeError = activeState?.error ?? null;
+  const activeTimestamp = activeState?.isStreaming
+    ? null
+    : activeState?.content
+      ? tabStates[activeTab!]
+        ? Date.now()
+        : null
+      : activeCached?.timestamp ?? null;
+
+  // Count of any tabs currently streaming
+  const streamingTabs = Object.entries(tabStates).filter(
+    ([, s]) => s.isStreaming
+  );
+
+  // Cached analyses not currently active (for the "recent" section)
+  const cachedList = ANALYSIS_PROMPTS.filter(
+    (a) => cachedResults[a.id] && a.id !== activeTab
+  ).sort(
+    (a, b) =>
+      (cachedResults[b.id]?.timestamp ?? 0) -
+      (cachedResults[a.id]?.timestamp ?? 0)
+  );
 
   return (
     <div className="space-y-6">
@@ -184,7 +276,9 @@ export default function AnalisesPage() {
       <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
         {ANALYSIS_PROMPTS.map((analysis) => {
           const Icon = analysis.icon;
-          const isActive = activeAnalysis === analysis.id && (isLoading || responseText);
+          const tabState = tabStates[analysis.id];
+          const isActive = activeTab === analysis.id;
+          const isStreaming = tabState?.isStreaming ?? false;
           const hasCached = !!cachedResults[analysis.id];
           return (
             <Card
@@ -192,29 +286,37 @@ export default function AnalisesPage() {
               className={`cursor-pointer transition-colors hover:bg-muted/50 ${
                 isActive ? "ring-2 ring-primary" : ""
               }`}
-              onClick={() => runAnalysis(analysis.prompt, analysis.id)}
+              onClick={() => handleTabClick(analysis.id)}
             >
               <CardContent className="flex flex-col items-center gap-2 p-3 sm:p-4 text-center">
                 <div
-                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
+                  className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
                     isActive
                       ? "bg-primary text-primary-foreground"
                       : "bg-muted"
                   }`}
                 >
-                  <Icon className="h-5 w-5" />
+                  {isStreaming ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <Icon className="h-5 w-5" />
+                  )}
                 </div>
                 <div>
-                  <p className="font-medium text-xs sm:text-sm">{analysis.label}</p>
+                  <p className="font-medium text-xs sm:text-sm">
+                    {analysis.label}
+                  </p>
                   <p className="text-xs text-muted-foreground hidden sm:block">
                     {analysis.description}
                   </p>
-                  {hasCached && (
+                  {isStreaming ? (
+                    <p className="text-xs text-primary mt-0.5">Gerando...</p>
+                  ) : hasCached ? (
                     <p className="text-xs text-primary mt-0.5 flex items-center justify-center gap-1">
                       <Clock className="h-3 w-3" />
                       {timeAgo(cachedResults[analysis.id]!.timestamp)}
                     </p>
-                  )}
+                  ) : null}
                 </div>
               </CardContent>
             </Card>
@@ -222,50 +324,71 @@ export default function AnalisesPage() {
         })}
       </div>
 
+      {/* Streaming indicator for background tabs */}
+      {streamingTabs.length > 0 && activeTab && !tabStates[activeTab]?.isStreaming && (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 rounded-lg px-3 py-2">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          <span>
+            Gerando em segundo plano:{" "}
+            {streamingTabs
+              .map(([id]) => ANALYSIS_PROMPTS.find((a) => a.id === id)?.label)
+              .join(", ")}
+          </span>
+        </div>
+      )}
+
       {/* Active Analysis Results */}
-      {(isLoading || (responseText && activeAnalysis)) && (
+      {activeTab && (activeContent || activeIsStreaming || activeError) && (
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Brain className="h-5 w-5 text-primary" />
                 <CardTitle className="text-base">
-                  {ANALYSIS_PROMPTS.find((a) => a.id === activeAnalysis)
-                    ?.label ?? "Análise"}
+                  {ANALYSIS_PROMPTS.find((a) => a.id === activeTab)?.label ??
+                    "Análise"}
                 </CardTitle>
+                {activeTimestamp && !activeIsStreaming && (
+                  <span className="text-xs text-muted-foreground flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    {timeAgo(activeTimestamp)}
+                  </span>
+                )}
               </div>
-              {!isLoading && activeAnalysis && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() =>
-                    runAnalysis(
-                      ANALYSIS_PROMPTS.find((a) => a.id === activeAnalysis)!
-                        .prompt,
-                      activeAnalysis
-                    )
-                  }
-                >
-                  <RefreshCw className="mr-1 h-3 w-3" />
-                  Atualizar
-                </Button>
-              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleRefresh(activeTab)}
+                disabled={activeIsStreaming}
+              >
+                <RefreshCw
+                  className={`mr-1 h-3 w-3 ${activeIsStreaming ? "animate-spin" : ""}`}
+                />
+                {activeIsStreaming ? "Gerando..." : "Atualizar"}
+              </Button>
             </div>
             <CardDescription>
               Gemini 3.0 Flash - Análise baseada nos dados reais
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {isLoading && !responseText ? (
+            {activeError ? (
+              <div className="text-sm text-destructive py-4 text-center">
+                {activeError}
+              </div>
+            ) : activeIsStreaming && !activeContent ? (
               <div className="flex items-center gap-3 py-8 justify-center">
                 <RefreshCw className="h-5 w-5 animate-spin text-primary" />
                 <p className="text-sm text-muted-foreground">
                   Analisando dados da fazenda...
                 </p>
               </div>
-            ) : responseText ? (
+            ) : activeContent ? (
               <div className="prose prose-sm max-w-none dark:prose-invert">
-                <MarkdownMessage content={responseText} />
+                <MarkdownMessage
+                  content={activeContent}
+                  isStreaming={activeIsStreaming}
+                />
               </div>
             ) : null}
           </CardContent>
@@ -273,70 +396,68 @@ export default function AnalisesPage() {
       )}
 
       {/* Cached Previous Results */}
-      {cachedList.length > 0 && !isLoading && (
+      {cachedList.length > 0 && (
         <div className="space-y-3">
           <h2 className="text-sm font-medium text-muted-foreground">
             Análises Recentes
           </h2>
-          {cachedList
-            .filter((a) => a.id !== activeAnalysis || !responseText)
-            .map((analysis) => {
-              const cached = cachedResults[analysis.id]!;
-              const isExpanded = expandedCached === analysis.id;
-              const Icon = analysis.icon;
-              return (
-                <Card key={analysis.id}>
-                  <CardHeader
-                    className="cursor-pointer hover:bg-muted/30 transition-colors"
-                    onClick={() =>
-                      setExpandedCached(isExpanded ? null : analysis.id)
-                    }
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Icon className="h-4 w-4 text-primary" />
-                        <CardTitle className="text-sm">
-                          {analysis.label}
-                        </CardTitle>
-                        <span className="text-xs text-muted-foreground flex items-center gap-1">
-                          <Clock className="h-3 w-3" />
-                          {timeAgo(cached.timestamp)}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            runAnalysis(analysis.prompt, analysis.id);
-                          }}
-                        >
-                          <RefreshCw className="h-3 w-3" />
-                        </Button>
-                        {isExpanded ? (
-                          <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                        ) : (
-                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                        )}
-                      </div>
+          {cachedList.map((analysis) => {
+            const cached = cachedResults[analysis.id]!;
+            const isExpanded = expandedCached === analysis.id;
+            const Icon = analysis.icon;
+            return (
+              <Card key={analysis.id}>
+                <CardHeader
+                  className="cursor-pointer hover:bg-muted/30 transition-colors"
+                  onClick={() =>
+                    setExpandedCached(isExpanded ? null : analysis.id)
+                  }
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Icon className="h-4 w-4 text-primary" />
+                      <CardTitle className="text-sm">
+                        {analysis.label}
+                      </CardTitle>
+                      <span className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        {timeAgo(cached.timestamp)}
+                      </span>
                     </div>
-                  </CardHeader>
-                  {isExpanded && (
-                    <CardContent>
-                      <div className="prose prose-sm max-w-none dark:prose-invert">
-                        <MarkdownMessage content={cached.content} />
-                      </div>
-                    </CardContent>
-                  )}
-                </Card>
-              );
-            })}
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRefresh(analysis.id);
+                        }}
+                      >
+                        <RefreshCw className="h-3 w-3" />
+                      </Button>
+                      {isExpanded ? (
+                        <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                      )}
+                    </div>
+                  </div>
+                </CardHeader>
+                {isExpanded && (
+                  <CardContent>
+                    <div className="prose prose-sm max-w-none dark:prose-invert">
+                      <MarkdownMessage content={cached.content} />
+                    </div>
+                  </CardContent>
+                )}
+              </Card>
+            );
+          })}
         </div>
       )}
 
       {/* Tip when nothing selected and no cache */}
-      {!activeAnalysis && cachedList.length === 0 && (
+      {!activeTab && cachedList.length === 0 && (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12 text-center">
             <Brain className="h-12 w-12 text-muted-foreground/50 mb-4" />

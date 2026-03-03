@@ -6,6 +6,7 @@ import {
   services,
   activities,
   financialEntries,
+  farms,
 } from "@/server/db/schema";
 import { eq, sum, count, and, gte } from "drizzle-orm";
 import {
@@ -32,6 +33,8 @@ import { CostBreakdownChart } from "@/components/charts/cost-breakdown-chart";
 import { MonthlyExpensesChart } from "@/components/charts/monthly-expenses-chart";
 import { RainTimelineChart } from "@/components/charts/rain-timeline-chart";
 import { getMergedRainData } from "@/lib/rain-api";
+import { getLatestCepeaPrices } from "@/lib/cepea-api";
+import { getRecentAlerts } from "@/lib/weather-alerts";
 
 export default async function DashboardPage() {
   const session = await auth();
@@ -181,6 +184,30 @@ export default async function DashboardPage() {
     last7DaysRain = rainData.slice(-7).reduce((s, d) => s + d.precipitationMm, 0);
   } catch {
     // rain API errors should not break dashboard
+  }
+
+  // Commodity prices
+  let latestSoyPrice: number | null = null;
+  let latestCornPrice: number | null = null;
+  try {
+    const soyPrices = await getLatestCepeaPrices("soy", 1);
+    const cornPrices = await getLatestCepeaPrices("corn", 1);
+    if (soyPrices.length > 0) latestSoyPrice = soyPrices[0].pricePerSack;
+    if (cornPrices.length > 0) latestCornPrice = cornPrices[0].pricePerSack;
+  } catch {
+    // price fetch errors should not break dashboard
+  }
+
+  // Weather alerts
+  let weatherAlertCount = 0;
+  try {
+    const [farm] = await db.select({ id: farms.id }).from(farms).limit(1);
+    if (farm) {
+      const alerts = await getRecentAlerts(farm.id, 3);
+      weatherAlertCount = alerts.length;
+    }
+  } catch {
+    // alert errors should not break dashboard
   }
 
   const totalCosts = totalInputsCost + totalServicesCost;
@@ -373,6 +400,51 @@ export default async function DashboardPage() {
             </CardContent>
           </Card>
         </Link>
+      )}
+
+      {/* Price & Weather Alert Cards */}
+      {(latestSoyPrice || latestCornPrice || weatherAlertCount > 0) && (
+        <div className="grid gap-3 grid-cols-2 lg:grid-cols-3">
+          {latestSoyPrice && (
+            <Link href="/mercado">
+              <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
+                <CardContent className="p-4">
+                  <p className="text-xs text-muted-foreground">Soja CEPEA</p>
+                  <p className="text-xl font-bold text-green-600">
+                    R$ {latestSoyPrice.toFixed(2)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">por saca 60kg</p>
+                </CardContent>
+              </Card>
+            </Link>
+          )}
+          {latestCornPrice && (
+            <Link href="/mercado">
+              <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
+                <CardContent className="p-4">
+                  <p className="text-xs text-muted-foreground">Milho CEPEA</p>
+                  <p className="text-xl font-bold text-yellow-600">
+                    R$ {latestCornPrice.toFixed(2)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">por saca 60kg</p>
+                </CardContent>
+              </Card>
+            </Link>
+          )}
+          {weatherAlertCount > 0 && (
+            <Link href="/configuracoes">
+              <Card className="hover:bg-muted/50 transition-colors cursor-pointer border-yellow-500/50">
+                <CardContent className="p-4">
+                  <p className="text-xs text-muted-foreground">Alertas Climáticos</p>
+                  <p className="text-xl font-bold text-yellow-600">
+                    {weatherAlertCount}
+                  </p>
+                  <p className="text-xs text-muted-foreground">alertas ativos</p>
+                </CardContent>
+              </Card>
+            </Link>
+          )}
+        </div>
       )}
 
       {/* AI Insights / Alerts */}

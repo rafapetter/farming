@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   Dialog,
@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Pencil, Loader2, Trash2 } from "lucide-react";
 import { updateField, deleteField } from "@/server/actions/fields";
+import { CoordinateInput } from "./coordinate-input";
 
 interface FieldEditDialogProps {
   field: {
@@ -22,6 +23,7 @@ interface FieldEditDialogProps {
     name: string;
     areaHa: string | null;
     notes: string | null;
+    coordinates?: unknown;
   };
 }
 
@@ -29,13 +31,24 @@ export function FieldEditDialog({ field }: FieldEditDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const [coordinates, setCoordinates] = useState<number[][]>(
+    Array.isArray(field.coordinates)
+      ? (field.coordinates as number[][])
+      : []
+  );
   const router = useRouter();
+
+  useEffect(() => setMounted(true), []);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
 
     const formData = new FormData(e.currentTarget);
+    if (coordinates.length >= 3) {
+      formData.set("coordinates", JSON.stringify(coordinates));
+    }
     const result = await updateField(field.id, formData);
 
     setLoading(false);
@@ -54,6 +67,14 @@ export function FieldEditDialog({ field }: FieldEditDialogProps) {
     router.refresh();
   }
 
+  if (!mounted) {
+    return (
+      <Button variant="ghost" size="icon" className="h-8 w-8" disabled>
+        <Pencil className="h-3.5 w-3.5" />
+      </Button>
+    );
+  }
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -61,7 +82,7 @@ export function FieldEditDialog({ field }: FieldEditDialogProps) {
           <Pencil className="h-3.5 w-3.5" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Editar Talhão</DialogTitle>
         </DialogHeader>
@@ -97,6 +118,15 @@ export function FieldEditDialog({ field }: FieldEditDialogProps) {
               defaultValue={field.notes ?? ""}
             />
           </div>
+
+          <CoordinateInput
+            initialCoordinates={
+              Array.isArray(field.coordinates)
+                ? (field.coordinates as number[][])
+                : undefined
+            }
+            onChange={setCoordinates}
+          />
 
           <div className="flex gap-2">
             <Button type="submit" className="flex-1" disabled={loading}>

@@ -72,6 +72,44 @@ export const insightPriorityEnum = pgEnum("insight_priority", [
   "medium",
   "high",
 ]);
+export const workerRoleEnum = pgEnum("worker_role", [
+  "trabalhador",
+  "operador",
+  "diarista",
+  "tratorista",
+  "other",
+]);
+export const machineOwnershipEnum = pgEnum("machine_ownership", [
+  "owned",
+  "rented",
+]);
+export const machineTypeEnum = pgEnum("machine_type", [
+  "trator",
+  "pulverizador",
+  "colheitadeira",
+  "plantadeira",
+  "distribuidor",
+  "caminhao",
+  "outro",
+]);
+export const commoditySourceEnum = pgEnum("commodity_source", [
+  "cepea",
+  "cbot",
+]);
+export const commodityTypeEnum = pgEnum("commodity_type", ["soy", "corn"]);
+export const weatherMetricEnum = pgEnum("weather_metric", [
+  "temp_high",
+  "temp_low",
+  "wind",
+  "humidity_low",
+  "frost",
+  "heavy_rain",
+]);
+export const nfStatusEnum = pgEnum("nf_status", [
+  "pending",
+  "processed",
+  "error",
+]);
 
 // ─── Core Tables ─────────────────────────────────────────────────────────────
 
@@ -179,6 +217,9 @@ export const services = pgTable("services", {
     .default("pending"),
   paymentDate: date("payment_date"),
   workerName: text("worker_name"),
+  machineId: uuid("machine_id").references(() => machines.id),
+  fuelCost: decimal("fuel_cost", { precision: 10, scale: 2 }),
+  maintenanceCost: decimal("maintenance_cost", { precision: 10, scale: 2 }),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at"),
@@ -223,10 +264,12 @@ export const activities = pgTable("activities", {
     .references(() => cropSeasons.id)
     .notNull(),
   fieldId: uuid("field_id").references(() => fields.id),
+  machineId: uuid("machine_id").references(() => machines.id),
   title: text("title").notNull(),
   activityType: activityTypeEnum("activity_type").notNull().default("other"),
   scheduledDate: date("scheduled_date"),
   completedDate: date("completed_date"),
+  hoursUsed: decimal("hours_used", { precision: 6, scale: 2 }),
   quantity: text("quantity"),
   observations: text("observations"),
   status: activityStatusEnum("status").notNull().default("planned"),
@@ -289,6 +332,62 @@ export const rainCache = pgTable("rain_cache", {
   endDate: date("end_date").notNull(),
   responseData: jsonb("response_data").notNull(),
   fetchedAt: timestamp("fetched_at").defaultNow().notNull(),
+});
+
+// ─── Workers Tables ─────────────────────────────────────────────────────────
+
+export const workers = pgTable("workers", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  farmId: uuid("farm_id")
+    .references(() => farms.id)
+    .notNull(),
+  name: text("name").notNull(),
+  role: workerRoleEnum("role").notNull().default("trabalhador"),
+  phone: text("phone"),
+  dailyRate: decimal("daily_rate", { precision: 10, scale: 2 }),
+  active: boolean("active").default(true).notNull(),
+  hireDate: date("hire_date"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const workerAssignments = pgTable("worker_assignments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workerId: uuid("worker_id")
+    .references(() => workers.id)
+    .notNull(),
+  activityId: uuid("activity_id").references(() => activities.id),
+  fieldId: uuid("field_id").references(() => fields.id),
+  date: date("date").notNull(),
+  hoursWorked: decimal("hours_worked", { precision: 5, scale: 2 }),
+  cost: decimal("cost", { precision: 10, scale: 2 }),
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// ─── Machines Tables ────────────────────────────────────────────────────────
+
+export const machines = pgTable("machines", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  farmId: uuid("farm_id")
+    .references(() => farms.id)
+    .notNull(),
+  name: text("name").notNull(),
+  type: machineTypeEnum("type").notNull().default("outro"),
+  ownership: machineOwnershipEnum("ownership").notNull().default("owned"),
+  hourlyRate: decimal("hourly_rate", { precision: 10, scale: 2 }),
+  fuelConsumptionLH: decimal("fuel_consumption_l_h", {
+    precision: 6,
+    scale: 2,
+  }),
+  fuelPricePerL: decimal("fuel_price_per_l", { precision: 8, scale: 2 }),
+  maintenanceCostPerH: decimal("maintenance_cost_per_h", {
+    precision: 10,
+    scale: 2,
+  }),
+  active: boolean("active").default(true).notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 // ─── Consulting Tables ───────────────────────────────────────────────────────
@@ -389,6 +488,142 @@ export const aiInsights = pgTable("ai_insights", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// ─── Commodity Prices Tables ─────────────────────────────────────────────────
+
+export const commodityPrices = pgTable("commodity_prices", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  farmId: uuid("farm_id")
+    .references(() => farms.id)
+    .notNull(),
+  source: commoditySourceEnum("source").notNull(),
+  commodity: commodityTypeEnum("commodity").notNull(),
+  date: date("date").notNull(),
+  pricePerSack: decimal("price_per_sack", { precision: 10, scale: 2 }),
+  priceDollar: decimal("price_dollar", { precision: 10, scale: 4 }),
+  unit: text("unit"),
+  fetchedAt: timestamp("fetched_at").defaultNow().notNull(),
+});
+
+// ─── Telegram Tables ────────────────────────────────────────────────────────
+
+export const telegramLinks = pgTable("telegram_links", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  farmId: uuid("farm_id")
+    .references(() => farms.id)
+    .notNull(),
+  chatId: text("chat_id").notNull(),
+  username: text("username"),
+  active: boolean("active").default(true).notNull(),
+  linkedAt: timestamp("linked_at").defaultNow().notNull(),
+});
+
+// ─── Weather Alert Tables ───────────────────────────────────────────────────
+
+export const weatherAlertRules = pgTable("weather_alert_rules", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  farmId: uuid("farm_id")
+    .references(() => farms.id)
+    .notNull(),
+  metric: weatherMetricEnum("metric").notNull(),
+  threshold: decimal("threshold", { precision: 8, scale: 2 }).notNull(),
+  enabled: boolean("enabled").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const weatherAlerts = pgTable("weather_alerts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  farmId: uuid("farm_id")
+    .references(() => farms.id)
+    .notNull(),
+  ruleId: uuid("rule_id").references(() => weatherAlertRules.id),
+  metric: weatherMetricEnum("metric").notNull(),
+  value: decimal("value", { precision: 8, scale: 2 }).notNull(),
+  message: text("message").notNull(),
+  date: date("date").notNull(),
+  notifiedAt: timestamp("notified_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// ─── Nota Fiscal Tables ─────────────────────────────────────────────────────
+
+export const notasFiscais = pgTable("notas_fiscais", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  farmId: uuid("farm_id")
+    .references(() => farms.id)
+    .notNull(),
+  seasonId: uuid("season_id").references(() => cropSeasons.id),
+  fileName: text("file_name").notNull(),
+  fileUrl: text("file_url").notNull(),
+  extractedData: jsonb("extracted_data"),
+  status: nfStatusEnum("status").notNull().default("pending"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// ─── Buyers Tables ──────────────────────────────────────────────────────────
+
+export const buyers = pgTable("buyers", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  farmId: uuid("farm_id")
+    .references(() => farms.id)
+    .notNull(),
+  name: text("name").notNull(),
+  company: text("company"),
+  phone: text("phone"),
+  email: text("email"),
+  location: text("location"),
+  commodities: jsonb("commodities"),
+  lastContactDate: date("last_contact_date"),
+  notes: text("notes"),
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// ─── Crop Evaluation Tables ─────────────────────────────────────────────────
+
+export const cropEvaluations = pgTable("crop_evaluations", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  farmId: uuid("farm_id")
+    .references(() => farms.id)
+    .notNull(),
+  cropName: text("crop_name").notNull(),
+  analysisData: jsonb("analysis_data"),
+  estimatedRevenuePerHa: decimal("estimated_revenue_per_ha", {
+    precision: 10,
+    scale: 2,
+  }),
+  estimatedCostPerHa: decimal("estimated_cost_per_ha", {
+    precision: 10,
+    scale: 2,
+  }),
+  riskScore: decimal("risk_score", { precision: 3, scale: 1 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// ─── Budget Tables ──────────────────────────────────────────────────────────
+
+export const budgetTargets = pgTable("budget_targets", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  farmId: uuid("farm_id")
+    .references(() => farms.id)
+    .notNull(),
+  category: text("category").notNull(),
+  monthlyLimit: decimal("monthly_limit", { precision: 12, scale: 2 }),
+  yearlyLimit: decimal("yearly_limit", { precision: 12, scale: 2 }),
+  year: integer("year"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// ─── Cron Log Tables ────────────────────────────────────────────────────────
+
+export const cronLogs = pgTable("cron_logs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  jobName: text("job_name").notNull(),
+  status: text("status").notNull(),
+  details: jsonb("details"),
+  executedAt: timestamp("executed_at").defaultNow().notNull(),
+});
+
 // ─── Relations ───────────────────────────────────────────────────────────────
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -468,6 +703,10 @@ export const activitiesRelations = relations(activities, ({ one, many }) => ({
   field: one(fields, {
     fields: [activities.fieldId],
     references: [fields.id],
+  }),
+  machine: one(machines, {
+    fields: [activities.machineId],
+    references: [machines.id],
   }),
   activityProducts: many(activityProducts),
 }));
@@ -574,6 +813,106 @@ export const rainEntriesRelations = relations(rainEntries, ({ one }) => ({
 export const rainCacheRelations = relations(rainCache, ({ one }) => ({
   farm: one(farms, {
     fields: [rainCache.farmId],
+    references: [farms.id],
+  }),
+}));
+
+export const workersRelations = relations(workers, ({ one, many }) => ({
+  farm: one(farms, {
+    fields: [workers.farmId],
+    references: [farms.id],
+  }),
+  assignments: many(workerAssignments),
+}));
+
+export const workerAssignmentsRelations = relations(
+  workerAssignments,
+  ({ one }) => ({
+    worker: one(workers, {
+      fields: [workerAssignments.workerId],
+      references: [workers.id],
+    }),
+    activity: one(activities, {
+      fields: [workerAssignments.activityId],
+      references: [activities.id],
+    }),
+    field: one(fields, {
+      fields: [workerAssignments.fieldId],
+      references: [fields.id],
+    }),
+  })
+);
+
+export const commodityPricesRelations = relations(
+  commodityPrices,
+  ({ one }) => ({
+    farm: one(farms, {
+      fields: [commodityPrices.farmId],
+      references: [farms.id],
+    }),
+  })
+);
+
+export const telegramLinksRelations = relations(telegramLinks, ({ one }) => ({
+  farm: one(farms, {
+    fields: [telegramLinks.farmId],
+    references: [farms.id],
+  }),
+}));
+
+export const weatherAlertRulesRelations = relations(
+  weatherAlertRules,
+  ({ one, many }) => ({
+    farm: one(farms, {
+      fields: [weatherAlertRules.farmId],
+      references: [farms.id],
+    }),
+    alerts: many(weatherAlerts),
+  })
+);
+
+export const weatherAlertsRelations = relations(weatherAlerts, ({ one }) => ({
+  farm: one(farms, {
+    fields: [weatherAlerts.farmId],
+    references: [farms.id],
+  }),
+  rule: one(weatherAlertRules, {
+    fields: [weatherAlerts.ruleId],
+    references: [weatherAlertRules.id],
+  }),
+}));
+
+export const notasFiscaisRelations = relations(notasFiscais, ({ one }) => ({
+  farm: one(farms, {
+    fields: [notasFiscais.farmId],
+    references: [farms.id],
+  }),
+  season: one(cropSeasons, {
+    fields: [notasFiscais.seasonId],
+    references: [cropSeasons.id],
+  }),
+}));
+
+export const buyersRelations = relations(buyers, ({ one }) => ({
+  farm: one(farms, {
+    fields: [buyers.farmId],
+    references: [farms.id],
+  }),
+}));
+
+export const cropEvaluationsRelations = relations(
+  cropEvaluations,
+  ({ one }) => ({
+    farm: one(farms, {
+      fields: [cropEvaluations.farmId],
+      references: [farms.id],
+    }),
+  })
+);
+
+export const budgetTargetsRelations = relations(budgetTargets, ({ one }) => ({
+  farm: one(farms, {
+    fields: [budgetTargets.farmId],
     references: [farms.id],
   }),
 }));

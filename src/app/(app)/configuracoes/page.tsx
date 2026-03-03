@@ -8,8 +8,10 @@ import {
   inputs,
   services,
   financialEntries,
+  telegramLinks,
+  weatherAlertRules,
 } from "@/server/db/schema";
-import { eq, sum, count } from "drizzle-orm";
+import { eq, sum } from "drizzle-orm";
 import {
   Card,
   CardContent,
@@ -23,12 +25,13 @@ import {
   Sprout,
   MapPin,
   Landmark,
-  Wheat,
   DollarSign,
   Scale,
-  Calendar,
+  CloudAlert,
 } from "lucide-react";
 import { LoanFormDialog } from "@/components/forms/loan-form-dialog";
+import { FarmEditDialog } from "@/components/forms/farm-edit-dialog";
+import { TelegramSetup } from "@/components/telegram-setup";
 
 export default async function ConfiguracoesPage() {
   const session = await auth();
@@ -37,18 +40,12 @@ export default async function ConfiguracoesPage() {
     id: string;
     name: string;
     location: string | null;
+    latitude: string | null;
+    longitude: string | null;
     totalAreaHa: string | null;
   } | null = null;
   let farmFields: Array<{ name: string; areaHa: string | null }> = [];
-  let seasons: Array<{
-    id: string;
-    name: string;
-    cropType: string;
-    status: string;
-    totalAreaHa: string | null;
-    plantingDate: string | null;
-    harvestDate: string | null;
-  }> = [];
+  let seasons: Array<{ id: string }> = [];
   let farmLoans: Array<{
     id: string;
     description: string;
@@ -60,6 +57,18 @@ export default async function ConfiguracoesPage() {
     endDate: string | null;
     status: string | null;
     notes: string | null;
+  }> = [];
+  let telegramLinked: Array<{
+    id: string;
+    chatId: string;
+    username: string | null;
+    active: boolean;
+  }> = [];
+  let alertRules: Array<{
+    id: string;
+    metric: string;
+    threshold: string;
+    enabled: boolean;
   }> = [];
   let totalInputsCost = 0;
   let totalServicesCost = 0;
@@ -76,12 +85,35 @@ export default async function ConfiguracoesPage() {
         .from(fields)
         .where(eq(fields.farmId, farm.id));
 
-      seasons = await db.select().from(cropSeasons).where(eq(cropSeasons.farmId, farm.id));
+      seasons = await db
+        .select({ id: cropSeasons.id })
+        .from(cropSeasons)
+        .where(eq(cropSeasons.farmId, farm.id));
 
       farmLoans = await db
         .select()
         .from(loans)
         .where(eq(loans.farmId, farm.id));
+
+      telegramLinked = await db
+        .select({
+          id: telegramLinks.id,
+          chatId: telegramLinks.chatId,
+          username: telegramLinks.username,
+          active: telegramLinks.active,
+        })
+        .from(telegramLinks)
+        .where(eq(telegramLinks.farmId, farm.id));
+
+      alertRules = await db
+        .select({
+          id: weatherAlertRules.id,
+          metric: weatherAlertRules.metric,
+          threshold: weatherAlertRules.threshold,
+          enabled: weatherAlertRules.enabled,
+        })
+        .from(weatherAlertRules)
+        .where(eq(weatherAlertRules.farmId, farm.id));
 
       for (const s of seasons) {
         const [iSum] = await db
@@ -160,9 +192,12 @@ export default async function ConfiguracoesPage() {
 
         <Card>
           <CardHeader>
-            <div className="flex items-center gap-2">
-              <Sprout className="h-5 w-5 text-primary" />
-              <CardTitle className="text-base">Propriedade</CardTitle>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Sprout className="h-5 w-5 text-primary" />
+                <CardTitle className="text-base">Propriedade</CardTitle>
+              </div>
+              {farm && <FarmEditDialog farm={farm} />}
             </div>
             <CardDescription>Dados da fazenda</CardDescription>
           </CardHeader>
@@ -198,68 +233,6 @@ export default async function ConfiguracoesPage() {
           </CardContent>
         </Card>
       </div>
-
-      {/* Safras */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Wheat className="h-5 w-5 text-primary" />
-            <CardTitle className="text-base">Safras</CardTitle>
-          </div>
-          <CardDescription>Todas as safras registradas</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {seasons.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nenhuma safra registrada.</p>
-          ) : (
-            <div className="space-y-3">
-              {seasons.map((s) => (
-                <div
-                  key={s.id}
-                  className="flex items-center justify-between rounded-lg border p-3"
-                >
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium">{s.name}</p>
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <span>
-                        {s.cropType === "soy"
-                          ? "Soja"
-                          : s.cropType === "corn"
-                            ? "Milho"
-                            : s.cropType}
-                      </span>
-                      <span>•</span>
-                      <span>{s.totalAreaHa ?? "?"} ha</span>
-                      {s.plantingDate && (
-                        <>
-                          <span>•</span>
-                          <Calendar className="h-3 w-3" />
-                          <span>
-                            {new Date(s.plantingDate).toLocaleDateString("pt-BR")}
-                            {s.harvestDate &&
-                              ` → ${new Date(s.harvestDate).toLocaleDateString("pt-BR")}`}
-                          </span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                  <Badge
-                    variant={s.status === "active" ? "default" : "secondary"}
-                  >
-                    {s.status === "active"
-                      ? "Ativa"
-                      : s.status === "planning"
-                        ? "Planejamento"
-                        : s.status === "harvested"
-                          ? "Colhida"
-                          : "Encerrada"}
-                  </Badge>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
 
       {/* Financial Summary */}
       <div className="grid gap-4 md:grid-cols-2">
@@ -318,6 +291,74 @@ export default async function ConfiguracoesPage() {
                 {fmt(totalFinancialIncome - totalFinancialExpenses)}
               </p>
             </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Telegram & Weather Alerts */}
+      <div className="grid gap-4 md:grid-cols-2">
+        <TelegramSetup links={telegramLinked} />
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <CloudAlert className="h-5 w-5 text-primary" />
+              <CardTitle className="text-base">Alertas Climáticos</CardTitle>
+            </div>
+            <CardDescription>Regras de alerta configuradas</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {alertRules.length > 0 ? (
+              <div className="space-y-2">
+                {alertRules.map((rule) => {
+                  const labels: Record<string, string> = {
+                    temp_high: "Temp. alta",
+                    temp_low: "Temp. baixa",
+                    wind: "Vento forte",
+                    humidity_low: "Umidade baixa",
+                    frost: "Geada",
+                    heavy_rain: "Chuva forte",
+                  };
+                  const units: Record<string, string> = {
+                    temp_high: "°C",
+                    temp_low: "°C",
+                    wind: "km/h",
+                    humidity_low: "%",
+                    frost: "°C",
+                    heavy_rain: "mm",
+                  };
+                  return (
+                    <div
+                      key={rule.id}
+                      className="flex items-center justify-between rounded-lg border p-2 px-3"
+                    >
+                      <div className="text-sm">
+                        <span className="font-medium">
+                          {labels[rule.metric] ?? rule.metric}
+                        </span>
+                        <span className="text-muted-foreground ml-2">
+                          {rule.metric.includes("low") || rule.metric === "frost"
+                            ? "≤"
+                            : "≥"}{" "}
+                          {rule.threshold}
+                          {units[rule.metric] ?? ""}
+                        </span>
+                      </div>
+                      <Badge
+                        variant={rule.enabled ? "default" : "secondary"}
+                        className="text-xs"
+                      >
+                        {rule.enabled ? "Ativo" : "Inativo"}
+                      </Badge>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Nenhuma regra de alerta configurada. As regras padrão serão criadas automaticamente.
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>

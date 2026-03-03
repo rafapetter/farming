@@ -7,10 +7,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Map, MapPin } from "lucide-react";
+import { Map, MapPin, CloudRain, CloudSun } from "lucide-react";
 import { FieldFormDialog } from "@/components/forms/field-form-dialog";
 import { FieldEditDialog } from "@/components/forms/field-edit-dialog";
 import { FarmMap } from "@/components/farm-map";
+import { getMergedRainData, fetchForecastRain } from "@/lib/rain-api";
 
 export default async function TalhoesPage() {
   let fieldsList: Array<{
@@ -18,9 +19,17 @@ export default async function TalhoesPage() {
     name: string;
     areaHa: string | null;
     notes: string | null;
+    coordinates: unknown;
   }> = [];
 
   let farmLocation: { latitude: number; longitude: number } | null = null;
+
+  // Rain data
+  let rain7d = 0;
+  let lastRainDate: string | null = null;
+  let lastRainMm = 0;
+  let forecastTotal = 0;
+  let forecastRainyDays = 0;
 
   try {
     fieldsList = await db.select().from(fields).orderBy(fields.name);
@@ -31,6 +40,30 @@ export default async function TalhoesPage() {
         latitude: parseFloat(farm.latitude),
         longitude: parseFloat(farm.longitude),
       };
+    }
+
+    // Fetch rain data for the farm location
+    const today = new Date();
+    const todayStr = today.toISOString().split("T")[0];
+    const sevenDaysAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .split("T")[0];
+
+    const [rainData, forecastData] = await Promise.all([
+      getMergedRainData(sevenDaysAgo, todayStr).catch(() => []),
+      fetchForecastRain().catch(() => []),
+    ]);
+
+    rain7d = rainData.reduce((s, d) => s + d.precipitationMm, 0);
+    forecastTotal = forecastData.reduce((s, d) => s + d.precipitationMm, 0);
+    forecastRainyDays = forecastData.filter((d) => d.precipitationMm > 0).length;
+
+    // Find last day with rain
+    const allRain = [...rainData].reverse();
+    const lastRain = allRain.find((d) => d.precipitationMm > 0);
+    if (lastRain) {
+      lastRainDate = lastRain.date;
+      lastRainMm = lastRain.precipitationMm;
     }
   } catch {
     // DB not connected
@@ -68,6 +101,37 @@ export default async function TalhoesPage() {
             </Badge>
           )}
         </div>
+      )}
+
+      {/* Rain summary card */}
+      {fieldsList.length > 0 && (
+        <Card>
+          <CardContent className="py-3 px-4">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+              <div className="flex items-center gap-2">
+                <CloudRain className="h-4 w-4 text-blue-500" />
+                <span className="text-muted-foreground">Últimos 7 dias:</span>
+                <span className="font-medium">{rain7d.toFixed(1)} mm</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <CloudSun className="h-4 w-4 text-blue-500" />
+                <span className="text-muted-foreground">Previsão 14d:</span>
+                <span className="font-medium">
+                  {forecastTotal.toFixed(0)} mm ({forecastRainyDays} dias)
+                </span>
+              </div>
+              {lastRainDate && (
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground">Última chuva:</span>
+                  <span className="font-medium">
+                    {new Date(lastRainDate + "T12:00:00").toLocaleDateString("pt-BR")}
+                    {" "}({lastRainMm.toFixed(1)} mm)
+                  </span>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* Map */}

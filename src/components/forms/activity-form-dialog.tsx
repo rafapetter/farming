@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   Dialog,
@@ -29,6 +29,8 @@ import {
 import {
   ACTIVITY_TYPE_LABELS,
   ACTIVITY_STATUS_LABELS,
+  MACHINE_TYPE_LABELS,
+  MACHINE_OWNERSHIP_LABELS,
 } from "@/lib/constants";
 
 export interface ActivityData {
@@ -38,13 +40,23 @@ export interface ActivityData {
   status: string;
   scheduledDate: string | null;
   completedDate: string | null;
+  machineId: string | null;
+  hoursUsed: string | null;
   quantity: string | null;
   observations: string | null;
+}
+
+interface MachineOption {
+  id: string;
+  name: string;
+  type: string;
+  ownership: string;
 }
 
 interface ActivityFormDialogProps {
   seasonId: string;
   activity?: ActivityData;
+  machines?: MachineOption[];
   trigger?: React.ReactNode;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -53,14 +65,19 @@ interface ActivityFormDialogProps {
 export function ActivityFormDialog({
   seasonId,
   activity,
+  machines = [],
   trigger,
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
 }: ActivityFormDialogProps) {
+  const [mounted, setMounted] = useState(false);
   const [internalOpen, setInternalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [selectedMachine, setSelectedMachine] = useState(activity?.machineId ?? "");
   const router = useRouter();
+
+  useEffect(() => setMounted(true), []);
 
   const isEdit = !!activity;
   const open = controlledOpen ?? internalOpen;
@@ -71,6 +88,11 @@ export function ActivityFormDialog({
     setLoading(true);
 
     const formData = new FormData(e.currentTarget);
+    if (selectedMachine && selectedMachine !== "none") {
+      formData.set("machineId", selectedMachine);
+    } else {
+      formData.delete("machineId");
+    }
 
     if (isEdit) {
       const result = await updateActivity(activity.id, seasonId, formData);
@@ -96,6 +118,15 @@ export function ActivityFormDialog({
     setDeleting(false);
     setOpen(false);
     router.refresh();
+  }
+
+  if (!mounted) {
+    return trigger ?? (
+      <Button size="sm" disabled>
+        <Plus className="mr-2 h-4 w-4" />
+        Nova Atividade
+      </Button>
+    );
   }
 
   const dialogContent = (
@@ -178,6 +209,42 @@ export function ActivityFormDialog({
             />
           </div>
         </div>
+
+        {machines.length > 0 && (
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Máquina</Label>
+              <Select
+                value={selectedMachine || "none"}
+                onValueChange={(v) => setSelectedMachine(v === "none" ? "" : v)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Nenhuma" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Nenhuma</SelectItem>
+                  {machines.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.name} ({MACHINE_TYPE_LABELS[m.type] ?? m.type} - {MACHINE_OWNERSHIP_LABELS[m.ownership] ?? m.ownership})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="hoursUsed">Horas Utilizadas</Label>
+              <Input
+                id="hoursUsed"
+                name="hoursUsed"
+                type="number"
+                step="0.5"
+                min="0"
+                defaultValue={activity?.hoursUsed ?? ""}
+                placeholder="0"
+              />
+            </div>
+          </div>
+        )}
 
         <div className="space-y-2">
           <Label htmlFor="quantity">Quantidade/Dose</Label>

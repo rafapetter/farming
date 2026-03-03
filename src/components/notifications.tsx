@@ -17,10 +17,13 @@ interface NotificationData {
 }
 
 export function Notifications({ data }: { data: NotificationData }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   const count =
     (data.pendingPayments > 0 ? 1 : 0) + (data.upcomingActivities.length > 0 ? 1 : 0);
 
-  if (count === 0) return null;
+  if (!mounted || count === 0) return null;
 
   return (
     <Popover>

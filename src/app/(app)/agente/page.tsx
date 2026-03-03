@@ -51,6 +51,7 @@ export default function AgentePage() {
     messages,
     sendMessage,
     isLoading,
+    status,
     chatId,
     sessions,
     startNewChat,
@@ -290,7 +291,7 @@ export default function AgentePage() {
               </div>
             </div>
           )}
-          {messages.map((message) => {
+          {messages.map((message, idx) => {
             const text = getMessageText(message);
             const fileParts = message.parts.filter(
               (p): p is { type: "file"; mediaType: string; url: string } =>
@@ -298,6 +299,10 @@ export default function AgentePage() {
             );
             if (!text && fileParts.length === 0) return null;
             const isUser = message.role === "user";
+            const isLastAssistant =
+              !isUser &&
+              idx === messages.length - 1 &&
+              status === "streaming";
             return (
               <div
                 key={message.id}
@@ -349,31 +354,40 @@ export default function AgentePage() {
                       (isUser ? (
                         <p className="text-sm whitespace-pre-wrap">{text}</p>
                       ) : (
-                        <MarkdownMessage content={text} className="text-sm" />
+                        <MarkdownMessage
+                          content={text}
+                          className="text-sm"
+                          isStreaming={isLastAssistant}
+                        />
                       ))}
                   </CardContent>
                 </Card>
               </div>
             );
           })}
-          {isLoading && (
-            <div className="flex gap-3">
-              <Avatar className="h-8 w-8 shrink-0">
-                <AvatarFallback className="bg-primary text-primary-foreground">
-                  <Sprout className="h-4 w-4" />
-                </AvatarFallback>
-              </Avatar>
-              <Card>
-                <CardContent className="p-3">
-                  <div className="flex gap-1">
-                    <span className="h-2 w-2 rounded-full bg-foreground/30 animate-bounce [animation-delay:0ms]" />
-                    <span className="h-2 w-2 rounded-full bg-foreground/30 animate-bounce [animation-delay:150ms]" />
-                    <span className="h-2 w-2 rounded-full bg-foreground/30 animate-bounce [animation-delay:300ms]" />
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          )}
+          {isLoading &&
+            !(
+              messages.length > 0 &&
+              messages[messages.length - 1].role === "assistant" &&
+              getMessageText(messages[messages.length - 1])
+            ) && (
+              <div className="flex gap-3">
+                <Avatar className="h-8 w-8 shrink-0">
+                  <AvatarFallback className="bg-primary text-primary-foreground">
+                    <Sprout className="h-4 w-4" />
+                  </AvatarFallback>
+                </Avatar>
+                <Card>
+                  <CardContent className="p-3">
+                    <div className="flex gap-1">
+                      <span className="h-2 w-2 rounded-full bg-foreground/30 animate-bounce [animation-delay:0ms]" />
+                      <span className="h-2 w-2 rounded-full bg-foreground/30 animate-bounce [animation-delay:150ms]" />
+                      <span className="h-2 w-2 rounded-full bg-foreground/30 animate-bounce [animation-delay:300ms]" />
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
           <div ref={scrollRef} />
         </div>
       </ScrollArea>

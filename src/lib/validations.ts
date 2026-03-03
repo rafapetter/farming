@@ -34,10 +34,34 @@ export const serviceFormSchema = z.object({
   paymentStatus: z.enum(["pending", "paid", "partial"]).default("pending"),
   paymentDate: z.string().optional(),
   workerName: z.string().optional(),
+  machineId: z.string().optional(),
+  fuelCost: z.coerce.number().min(0).optional(),
+  maintenanceCost: z.coerce.number().min(0).optional(),
   notes: z.string().optional(),
 });
 
 export type ServiceFormValues = z.infer<typeof serviceFormSchema>;
+
+export const machineFormSchema = z.object({
+  name: z.string().min(1, "Nome é obrigatório"),
+  type: z.enum([
+    "trator",
+    "pulverizador",
+    "colheitadeira",
+    "plantadeira",
+    "distribuidor",
+    "caminhao",
+    "outro",
+  ]),
+  ownership: z.enum(["owned", "rented"]),
+  hourlyRate: z.coerce.number().min(0).optional(),
+  fuelConsumptionLH: z.coerce.number().min(0).optional(),
+  fuelPricePerL: z.coerce.number().min(0).optional(),
+  maintenanceCostPerH: z.coerce.number().min(0).optional(),
+  notes: z.string().optional(),
+});
+
+export type MachineFormValues = z.infer<typeof machineFormSchema>;
 
 export const activityFormSchema = z.object({
   title: z.string().min(1, "Título é obrigatório"),
@@ -51,6 +75,8 @@ export const activityFormSchema = z.object({
   ]),
   scheduledDate: z.string().optional(),
   completedDate: z.string().optional(),
+  machineId: z.string().optional(),
+  hoursUsed: z.coerce.number().min(0).optional(),
   quantity: z.string().optional(),
   observations: z.string().optional(),
   status: z
@@ -136,3 +162,25 @@ export const advanceFormSchema = z.object({
 });
 
 export type AdvanceFormValues = z.infer<typeof advanceFormSchema>;
+
+export const workerFormSchema = z.object({
+  name: z.string().min(1, "Nome é obrigatório"),
+  role: z.enum(["trabalhador", "operador", "diarista", "tratorista", "other"]),
+  phone: z.string().optional(),
+  dailyRate: z.coerce.number().min(0).optional(),
+  hireDate: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+export type WorkerFormValues = z.infer<typeof workerFormSchema>;
+
+export const workerAssignmentFormSchema = z.object({
+  workerId: z.string().min(1, "Trabalhador é obrigatório"),
+  fieldId: z.string().optional(),
+  date: z.string().min(1, "Data é obrigatória"),
+  hoursWorked: z.coerce.number().min(0).optional(),
+  cost: z.coerce.number().min(0).optional(),
+  description: z.string().optional(),
+});
+
+export type WorkerAssignmentFormValues = z.infer<typeof workerAssignmentFormSchema>;

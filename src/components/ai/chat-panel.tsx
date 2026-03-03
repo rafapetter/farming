@@ -47,11 +47,14 @@ const ACCEPTED_TYPES = "image/png,image/jpeg,image/webp,application/pdf";
 
 export function ChatPanel() {
   const pathname = usePathname();
+  const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const [showSessions, setShowSessions] = useState(false);
   const [attachments, setAttachments] = useState<File[]>([]);
+
+  useEffect(() => setMounted(true), []);
   const scrollRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -60,6 +63,7 @@ export function ChatPanel() {
     messages,
     sendMessage,
     isLoading,
+    status,
     chatId,
     sessions,
     startNewChat,
@@ -145,7 +149,8 @@ export function ChatPanel() {
   const hasContent = inputValue.trim() || attachments.length > 0;
 
   // Hide on the full agent page — it has its own chat UI
-  if (pathname === "/agente") return null;
+  // Also wait for mount to avoid hydration mismatch from Sheet/Dialog IDs
+  if (!mounted || pathname === "/agente") return null;
 
   return (
     <>
@@ -286,7 +291,7 @@ export function ChatPanel() {
                   </div>
                 )}
                 <div className="space-y-4">
-                  {messages.map((message) => {
+                  {messages.map((message, idx) => {
                     const text = getMessageText(message);
                     const fileParts = message.parts.filter(
                       (p): p is { type: "file"; mediaType: string; url: string } =>
@@ -294,6 +299,10 @@ export function ChatPanel() {
                     );
                     if (!text && fileParts.length === 0) return null;
                     const isUser = message.role === "user";
+                    const isLastAssistant =
+                      !isUser &&
+                      idx === messages.length - 1 &&
+                      status === "streaming";
                     return (
                       <div
                         key={message.id}
@@ -346,28 +355,36 @@ export function ChatPanel() {
                             (isUser ? (
                               <div className="whitespace-pre-wrap">{text}</div>
                             ) : (
-                              <MarkdownMessage content={text} />
+                              <MarkdownMessage
+                                content={text}
+                                isStreaming={isLastAssistant}
+                              />
                             ))}
                         </div>
                       </div>
                     );
                   })}
-                  {isLoading && (
-                    <div className="flex gap-2">
-                      <Avatar className="h-7 w-7 shrink-0">
-                        <AvatarFallback className="bg-primary text-primary-foreground text-xs">
-                          <Sprout className="h-3.5 w-3.5" />
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="bg-muted rounded-lg px-3 py-2">
-                        <div className="flex gap-1">
-                          <span className="h-2 w-2 rounded-full bg-foreground/30 animate-bounce [animation-delay:0ms]" />
-                          <span className="h-2 w-2 rounded-full bg-foreground/30 animate-bounce [animation-delay:150ms]" />
-                          <span className="h-2 w-2 rounded-full bg-foreground/30 animate-bounce [animation-delay:300ms]" />
+                  {isLoading &&
+                    !(
+                      messages.length > 0 &&
+                      messages[messages.length - 1].role === "assistant" &&
+                      getMessageText(messages[messages.length - 1])
+                    ) && (
+                      <div className="flex gap-2">
+                        <Avatar className="h-7 w-7 shrink-0">
+                          <AvatarFallback className="bg-primary text-primary-foreground text-xs">
+                            <Sprout className="h-3.5 w-3.5" />
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="bg-muted rounded-lg px-3 py-2">
+                          <div className="flex gap-1">
+                            <span className="h-2 w-2 rounded-full bg-foreground/30 animate-bounce [animation-delay:0ms]" />
+                            <span className="h-2 w-2 rounded-full bg-foreground/30 animate-bounce [animation-delay:150ms]" />
+                            <span className="h-2 w-2 rounded-full bg-foreground/30 animate-bounce [animation-delay:300ms]" />
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )}
+                    )}
                 </div>
               </div>
 

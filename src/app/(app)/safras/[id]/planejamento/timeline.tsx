@@ -57,14 +57,23 @@ function isOverdue(activity: ActivityData): boolean {
   return scheduled < new Date();
 }
 
+interface MachineOption {
+  id: string;
+  name: string;
+  type: string;
+  ownership: string;
+}
+
 interface PlanejamentoTimelineProps {
   seasonId: string;
   activities: ActivityData[];
+  machines?: MachineOption[];
 }
 
 export function PlanejamentoTimeline({
   seasonId,
   activities,
+  machines = [],
 }: PlanejamentoTimelineProps) {
   const [editingActivity, setEditingActivity] = useState<ActivityData | null>(
     null
@@ -283,6 +292,7 @@ export function PlanejamentoTimeline({
         <ActivityFormDialog
           seasonId={seasonId}
           activity={editingActivity}
+          machines={machines}
           open={!!editingActivity}
           onOpenChange={(open) => {
             if (!open) setEditingActivity(null);

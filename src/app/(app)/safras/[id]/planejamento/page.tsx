@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { db } from "@/server/db";
-import { cropSeasons, activities } from "@/server/db/schema";
-import { eq } from "drizzle-orm";
+import { cropSeasons, activities, machines, farms } from "@/server/db/schema";
+import { eq, and } from "drizzle-orm";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
@@ -22,9 +22,17 @@ export default async function PlanejamentoPage({
     activityType: string;
     scheduledDate: string | null;
     completedDate: string | null;
+    machineId: string | null;
+    hoursUsed: string | null;
     quantity: string | null;
     observations: string | null;
     status: string;
+  }> = [];
+  let machineList: Array<{
+    id: string;
+    name: string;
+    type: string;
+    ownership: string;
   }> = [];
 
   try {
@@ -41,6 +49,20 @@ export default async function PlanejamentoPage({
         .from(activities)
         .where(eq(activities.seasonId, id))
         .orderBy(activities.scheduledDate);
+
+      // Fetch machines for the farm
+      const [farm] = await db.select({ id: farms.id }).from(farms).limit(1);
+      if (farm) {
+        machineList = await db
+          .select({
+            id: machines.id,
+            name: machines.name,
+            type: machines.type,
+            ownership: machines.ownership,
+          })
+          .from(machines)
+          .where(and(eq(machines.farmId, farm.id), eq(machines.active, true)));
+      }
     }
   } catch {
     notFound();
@@ -60,10 +82,14 @@ export default async function PlanejamentoPage({
           <h1 className="text-2xl font-bold tracking-tight">Planejamento</h1>
           <p className="text-sm text-muted-foreground">{season.name}</p>
         </div>
-        <ActivityFormDialog seasonId={id} />
+        <ActivityFormDialog seasonId={id} machines={machineList} />
       </div>
 
-      <PlanejamentoTimeline seasonId={id} activities={activityList} />
+      <PlanejamentoTimeline
+        seasonId={id}
+        activities={activityList}
+        machines={machineList}
+      />
     </div>
   );
 }

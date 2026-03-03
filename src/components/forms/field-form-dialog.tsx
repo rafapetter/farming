@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   Dialog,
@@ -15,17 +15,25 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Plus, Loader2 } from "lucide-react";
 import { createField } from "@/server/actions/fields";
+import { CoordinateInput } from "./coordinate-input";
 
 export function FieldFormDialog() {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const [coordinates, setCoordinates] = useState<number[][]>([]);
   const router = useRouter();
+
+  useEffect(() => setMounted(true), []);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
 
     const formData = new FormData(e.currentTarget);
+    if (coordinates.length >= 3) {
+      formData.set("coordinates", JSON.stringify(coordinates));
+    }
     const result = await createField(formData);
 
     setLoading(false);
@@ -33,6 +41,15 @@ export function FieldFormDialog() {
       setOpen(false);
       router.refresh();
     }
+  }
+
+  if (!mounted) {
+    return (
+      <Button size="sm" disabled>
+        <Plus className="mr-2 h-4 w-4" />
+        Novo Talhão
+      </Button>
+    );
   }
 
   return (
@@ -43,7 +60,7 @@ export function FieldFormDialog() {
           Novo Talhão
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Novo Talhão</DialogTitle>
         </DialogHeader>
@@ -73,6 +90,8 @@ export function FieldFormDialog() {
             <Label htmlFor="notes">Observações</Label>
             <Textarea id="notes" name="notes" rows={3} />
           </div>
+
+          <CoordinateInput onChange={setCoordinates} />
 
           <Button type="submit" className="w-full" disabled={loading}>
             {loading ? (

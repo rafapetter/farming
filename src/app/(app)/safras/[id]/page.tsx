@@ -1,7 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/server/db";
-import { cropSeasons, inputs, services, activities } from "@/server/db/schema";
+import {
+  cropSeasons,
+  inputs,
+  services,
+  activities,
+  machines,
+} from "@/server/db/schema";
 import { eq, sum, count, and } from "drizzle-orm";
 import {
   Card,
@@ -11,19 +17,21 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Package,
   Wrench,
   CalendarDays,
   BarChart3,
   GitCompare,
-  DollarSign,
   ArrowRight,
+  Tractor,
 } from "lucide-react";
 import {
   CROP_TYPE_LABELS,
   SEASON_STATUS_LABELS,
+  MACHINE_TYPE_LABELS,
+  MACHINE_OWNERSHIP_LABELS,
+  ACTIVITY_TYPE_LABELS,
 } from "@/lib/constants";
 
 export default async function SafraDetailPage({
@@ -52,6 +60,15 @@ export default async function SafraDetailPage({
   let servicesTotal = "0";
   let activitiesCount = 0;
   let pendingActivities = 0;
+  let machineUsage: Array<{
+    machineName: string;
+    machineType: string;
+    ownership: string;
+    source: "service" | "activity";
+    description: string;
+    hours: number;
+    cost: number;
+  }> = [];
 
   try {
     const [inputsSum] = await db
@@ -79,12 +96,86 @@ export default async function SafraDetailPage({
         and(eq(activities.seasonId, id), eq(activities.status, "planned"))
       );
     pendingActivities = pendCount?.count ?? 0;
+
+    // Fetch machine usage from services
+    const serviceUsage = await db
+      .select({
+        machineName: machines.name,
+        machineType: machines.type,
+        ownership: machines.ownership,
+        description: services.description,
+        hours: services.hours,
+        totalCost: services.totalCost,
+      })
+      .from(services)
+      .innerJoin(machines, eq(services.machineId, machines.id))
+      .where(eq(services.seasonId, id));
+
+    for (const s of serviceUsage) {
+      machineUsage.push({
+        machineName: s.machineName,
+        machineType: s.machineType,
+        ownership: s.ownership,
+        source: "service",
+        description: s.description,
+        hours: parseFloat(s.hours ?? "0"),
+        cost: parseFloat(s.totalCost ?? "0"),
+      });
+    }
+
+    // Fetch machine usage from activities
+    const activityUsage = await db
+      .select({
+        machineName: machines.name,
+        machineType: machines.type,
+        ownership: machines.ownership,
+        title: activities.title,
+        activityType: activities.activityType,
+        hoursUsed: activities.hoursUsed,
+      })
+      .from(activities)
+      .innerJoin(machines, eq(activities.machineId, machines.id))
+      .where(eq(activities.seasonId, id));
+
+    for (const a of activityUsage) {
+      machineUsage.push({
+        machineName: a.machineName,
+        machineType: a.machineType,
+        ownership: a.ownership,
+        source: "activity",
+        description: `${ACTIVITY_TYPE_LABELS[a.activityType] ?? a.activityType}: ${a.title}`,
+        hours: parseFloat(a.hoursUsed ?? "0"),
+        cost: 0,
+      });
+    }
   } catch {
     // DB error - show zeros
   }
 
   const totalCost =
     parseFloat(inputsTotal || "0") + parseFloat(servicesTotal || "0");
+
+  // Aggregate machine usage by machine name
+  const machineAgg = new Map<
+    string,
+    { type: string; ownership: string; totalHours: number; totalCost: number; count: number }
+  >();
+  for (const u of machineUsage) {
+    const existing = machineAgg.get(u.machineName);
+    if (existing) {
+      existing.totalHours += u.hours;
+      existing.totalCost += u.cost;
+      existing.count += 1;
+    } else {
+      machineAgg.set(u.machineName, {
+        type: u.machineType,
+        ownership: u.ownership,
+        totalHours: u.hours,
+        totalCost: u.cost,
+        count: 1,
+      });
+    }
+  }
 
   const subPages = [
     {
@@ -214,6 +305,67 @@ export default async function SafraDetailPage({
             </Card>
           </Link>
         ))}
+      </div>
+
+      {/* Machine Usage */}
+      <div className="space-y-3">
+        <h2 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+          <Tractor className="h-4 w-4" />
+          Máquinas Utilizadas nesta Safra
+        </h2>
+        {machineAgg.size > 0 ? (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {Array.from(machineAgg.entries()).map(([name, data]) => (
+              <Card key={name}>
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-medium">{name}</p>
+                    <Badge variant="outline" className="text-xs">
+                      {MACHINE_OWNERSHIP_LABELS[data.ownership] ??
+                        data.ownership}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    {MACHINE_TYPE_LABELS[data.type] ?? data.type}
+                  </p>
+                  <div className="flex gap-4 text-xs">
+                    <span>
+                      <span className="font-medium">{data.count}</span>{" "}
+                      {data.count === 1 ? "uso" : "usos"}
+                    </span>
+                    {data.totalHours > 0 && (
+                      <span>
+                        <span className="font-medium">
+                          {data.totalHours.toFixed(1)}
+                        </span>
+                        h
+                      </span>
+                    )}
+                    {data.totalCost > 0 && (
+                      <span className="text-primary font-medium">
+                        R${" "}
+                        {data.totalCost.toLocaleString("pt-BR", {
+                          minimumFractionDigits: 0,
+                          maximumFractionDigits: 0,
+                        })}
+                      </span>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+              <Tractor className="h-10 w-10 text-muted-foreground/30" />
+              <p className="mt-3 text-sm text-muted-foreground">
+                Nenhuma máquina vinculada a esta safra ainda.
+                Vincule máquinas em Serviços ou Planejamento.
+              </p>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

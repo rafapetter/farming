@@ -22,6 +22,8 @@ export async function createActivity(seasonId: string, formData: FormData) {
     activityType: data.activityType,
     scheduledDate: data.scheduledDate || null,
     completedDate: data.completedDate || null,
+    machineId: data.machineId || null,
+    hoursUsed: data.hoursUsed?.toString() ?? null,
     quantity: data.quantity || null,
     observations: data.observations || null,
     status: data.status,
@@ -29,6 +31,7 @@ export async function createActivity(seasonId: string, formData: FormData) {
 
   revalidatePath(`/safras/${seasonId}/planejamento`);
   revalidatePath(`/safras/${seasonId}`);
+  revalidatePath("/atividades");
   return { success: true };
 }
 
@@ -50,6 +53,7 @@ export async function updateActivityStatus(
 
   revalidatePath(`/safras/${seasonId}/planejamento`);
   revalidatePath(`/safras/${seasonId}`);
+  revalidatePath("/atividades");
 }
 
 export async function updateActivity(
@@ -73,6 +77,8 @@ export async function updateActivity(
       activityType: data.activityType,
       scheduledDate: data.scheduledDate || null,
       completedDate: data.completedDate || null,
+      machineId: data.machineId || null,
+      hoursUsed: data.hoursUsed?.toString() ?? null,
       quantity: data.quantity || null,
       observations: data.observations || null,
       status: data.status,
@@ -82,6 +88,7 @@ export async function updateActivity(
 
   revalidatePath(`/safras/${seasonId}/planejamento`);
   revalidatePath(`/safras/${seasonId}`);
+  revalidatePath("/atividades");
   return { success: true };
 }
 
@@ -90,4 +97,5 @@ export async function deleteActivity(activityId: string, seasonId: string) {
 
   revalidatePath(`/safras/${seasonId}/planejamento`);
   revalidatePath(`/safras/${seasonId}`);
+  revalidatePath("/atividades");
 }

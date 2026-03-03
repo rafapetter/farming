@@ -1,5 +1,5 @@
 import { db } from "@/server/db";
-import { cropSeasons, rainEntries, farms } from "@/server/db/schema";
+import { cropSeasons, rainEntries, farms, fields } from "@/server/db/schema";
 import { eq, desc } from "drizzle-orm";
 import {
   Card,
@@ -9,7 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { CloudRain, Droplets, TrendingUp, CloudSun, Trash2 } from "lucide-react";
+import { CloudRain, Droplets, TrendingUp, CloudSun, MapPin } from "lucide-react";
 import { RainFormDialog } from "@/components/forms/rain-form-dialog";
 import { RainTimelineChart } from "@/components/charts/rain-timeline-chart";
 import { RainMonthlyChart } from "@/components/charts/rain-monthly-chart";
@@ -17,6 +17,31 @@ import { CropWaterNeedsChart } from "@/components/charts/crop-water-needs-chart"
 import { getMergedRainData, fetchForecastRain } from "@/lib/rain-api";
 import { computeCropWaterStatus } from "@/lib/crop-water";
 import { DeleteRainButton } from "./delete-button";
+
+function computeFieldsCenter(
+  fieldsList: Array<{ coordinates: unknown }>
+): { lat: number; lon: number } | null {
+  const allLats: number[] = [];
+  const allLons: number[] = [];
+
+  for (const field of fieldsList) {
+    if (field.coordinates && Array.isArray(field.coordinates)) {
+      for (const coord of field.coordinates as number[][]) {
+        if (Array.isArray(coord) && coord.length >= 2) {
+          allLats.push(coord[0]);
+          allLons.push(coord[1]);
+        }
+      }
+    }
+  }
+
+  if (allLats.length === 0) return null;
+
+  return {
+    lat: allLats.reduce((s, v) => s + v, 0) / allLats.length,
+    lon: allLons.reduce((s, v) => s + v, 0) / allLons.length,
+  };
+}
 
 export default async function ChuvasPage() {
   const today = new Date();
@@ -53,11 +78,40 @@ export default async function ChuvasPage() {
     totalAreaHa: string | null;
   }> = [];
 
+  // Location reference info
+  let locationLabel = "";
+  let locationCoords: { lat: number; lon: number } | null = null;
+  let locationSource: "fields" | "farm" | "default" = "default";
+
   try {
+    const [farm] = await db.select().from(farms).limit(1);
+
+    // Determine reference coordinates: fields center > farm address > defaults
+    const fieldsList = await db
+      .select({ coordinates: fields.coordinates })
+      .from(fields)
+      .where(farm ? eq(fields.farmId, farm.id) : undefined as any);
+
+    const fieldsCenter = computeFieldsCenter(fieldsList);
+
+    if (fieldsCenter) {
+      locationCoords = fieldsCenter;
+      locationSource = "fields";
+      locationLabel = `Centro dos talhões (${fieldsCenter.lat.toFixed(4)}, ${fieldsCenter.lon.toFixed(4)})`;
+    } else if (farm?.latitude && farm?.longitude) {
+      locationCoords = {
+        lat: parseFloat(farm.latitude),
+        lon: parseFloat(farm.longitude),
+      };
+      locationSource = "farm";
+      locationLabel = farm.location || `${locationCoords.lat.toFixed(4)}, ${locationCoords.lon.toFixed(4)}`;
+    } else {
+      locationLabel = "Coordenadas padrão (Goiás)";
+    }
+
     rainData = await getMergedRainData(seasonStart, todayStr);
     forecastData = await fetchForecastRain();
 
-    const [farm] = await db.select().from(farms).limit(1);
     if (farm) {
       manualEntries = await db
         .select()
@@ -137,6 +191,25 @@ export default async function ChuvasPage() {
           </p>
         </div>
         <RainFormDialog />
+      </div>
+
+      {/* Location reference */}
+      <div className="flex items-center gap-2 text-sm text-muted-foreground rounded-lg border px-3 py-2">
+        <MapPin className="h-4 w-4 shrink-0" />
+        <span>Referência:</span>
+        <span className="font-medium text-foreground">{locationLabel}</span>
+        <Badge variant="outline" className="text-xs ml-1">
+          {locationSource === "fields"
+            ? "Média dos talhões"
+            : locationSource === "farm"
+              ? "Endereço da fazenda"
+              : "Padrão"}
+        </Badge>
+        {locationSource !== "fields" && (
+          <span className="text-xs italic ml-auto">
+            Cadastre coordenadas nos talhões para maior precisão
+          </span>
+        )}
       </div>
 
       {/* Summary Cards */}

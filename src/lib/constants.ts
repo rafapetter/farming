@@ -4,7 +4,7 @@ export const FARM_NAME = "Fazenda Primavera";
 interface NavItem {
   title: string;
   href: string;
-  icon: "LayoutDashboard" | "Wheat" | "DollarSign" | "ClipboardList" | "Map" | "Bot" | "Settings" | "Brain" | "CloudRain" | "HandCoins";
+  icon: "LayoutDashboard" | "Wheat" | "DollarSign" | "ClipboardList" | "Map" | "Bot" | "Settings" | "Brain" | "CloudRain" | "HandCoins" | "HardHat" | "TrendingUp" | "Target" | "Tractor" | "ListChecks";
   ownerOnly?: boolean;
 }
 
@@ -16,6 +16,11 @@ export const NAV_ITEMS: NavItem[] = [
   { title: "Consultoria", href: "/consultoria", icon: "ClipboardList" },
   { title: "Talhões", href: "/talhoes", icon: "Map" },
   { title: "Chuvas", href: "/chuvas", icon: "CloudRain" },
+  { title: "Trabalhadores", href: "/trabalhadores", icon: "HardHat", ownerOnly: true },
+  { title: "Máquinas", href: "/maquinas", icon: "Tractor" },
+  { title: "Atividades", href: "/atividades", icon: "ListChecks" },
+  { title: "Mercado", href: "/mercado", icon: "TrendingUp" },
+  { title: "Planejamento", href: "/planejamento", icon: "Target" },
   { title: "Adiantamentos", href: "/adiantamentos", icon: "HandCoins", ownerOnly: true },
   { title: "Agente IA", href: "/agente", icon: "Bot" },
   { title: "Configurações", href: "/configuracoes", icon: "Settings" },
@@ -73,6 +78,21 @@ export const ACTIVITY_STATUS_LABELS: Record<string, string> = {
   in_progress: "Em Andamento",
   completed: "Concluído",
   cancelled: "Cancelado",
+};
+
+export const MACHINE_TYPE_LABELS: Record<string, string> = {
+  trator: "Trator",
+  pulverizador: "Pulverizador",
+  colheitadeira: "Colheitadeira",
+  plantadeira: "Plantadeira",
+  distribuidor: "Distribuidor",
+  caminhao: "Caminhão",
+  outro: "Outro",
+};
+
+export const MACHINE_OWNERSHIP_LABELS: Record<string, string> = {
+  owned: "Própria",
+  rented: "Alugada",
 };
 
 export const CROP_WATER_NEEDS: Record<

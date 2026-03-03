@@ -35,6 +35,9 @@ export async function createService(seasonId: string, formData: FormData) {
     paymentStatus: data.paymentStatus,
     paymentDate: data.paymentDate || null,
     workerName: data.workerName || null,
+    machineId: data.machineId || null,
+    fuelCost: data.fuelCost?.toString() ?? null,
+    maintenanceCost: data.maintenanceCost?.toString() ?? null,
     notes: data.notes || null,
   });
 

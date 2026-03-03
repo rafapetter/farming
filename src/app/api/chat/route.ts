@@ -1,6 +1,7 @@
 import { google } from "@ai-sdk/google";
 import {
   streamText,
+  generateText,
   tool,
   stepCountIs,
   convertToModelMessages,
@@ -22,11 +23,15 @@ import {
   consultingVisits,
   chatSessions,
   rainEntries,
+  workers,
+  workerAssignments,
 } from "@/server/db/schema";
-import { eq, sum, count, and, desc, ne } from "drizzle-orm";
+import { eq, sum, count, and, desc, ne, gte } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { getMergedRainData, fetchForecastRain } from "@/lib/rain-api";
 import { computeCropWaterStatus } from "@/lib/crop-water";
+
+export const maxDuration = 60;
 
 const SYSTEM_PROMPT = `Você é o "Agente Fazenda", um assistente agrícola inteligente da Fazenda Primavera.
 
@@ -50,9 +55,13 @@ Suas capacidades:
 - Consultar talhões e suas áreas
 - Consultar visitas de consultoria
 - Registrar novos insumos, serviços, atividades e gastos
+- Consultar trabalhadores e seus registros de trabalho (dias, horas, custos)
 - Consultar dados de chuva/precipitação (histórico e previsão 14 dias via Open-Meteo)
 - Consultar necessidade hídrica das culturas e comparar com chuva recebida
 - Registrar medições manuais de chuva
+- Consultar cotações de commodities (CEPEA e CBOT para soja e milho)
+- Consultar previsão do tempo detalhada e alertas climáticos
+- Consultar compradores potenciais de soja/milho cadastrados
 - Gerar relatórios resumidos
 - Fornecer insights e recomendações agrícolas
 
@@ -140,17 +149,32 @@ export async function POST(req: Request) {
   const body = await req.json();
   const chatId: string | null = body.chatId ?? null;
   const messages: UIMessage[] = body.messages ?? [];
+  const isAnalysis: boolean = body.mode === "analysis";
 
-  // Build history context from other sessions
-  const historyContext = await buildHistoryContext(session.user.id, chatId);
+  // Build history context from other sessions (skip for analysis mode)
+  const historyContext = isAnalysis
+    ? ""
+    : await buildHistoryContext(session.user.id, chatId);
 
-  const modelMessages = await convertToModelMessages(messages);
+  // For analysis mode, build a single-message conversation
+  // Using messages format (not prompt) so multi-step tool use works correctly
+  const modelMessages = isAnalysis
+    ? (() => {
+        const firstMsg = messages[0];
+        const promptText =
+          firstMsg?.parts
+            ?.filter(
+              (p): p is { type: "text"; text: string } => p.type === "text"
+            )
+            .map((p) => p.text)
+            .join("") ||
+          (firstMsg as any)?.content ||
+          "";
+        return [{ role: "user" as const, content: promptText }];
+      })()
+    : await convertToModelMessages(messages);
 
-  const result = streamText({
-    model: google("gemini-3-flash-preview"),
-    system: SYSTEM_PROMPT + historyContext,
-    messages: modelMessages,
-    tools: {
+  const allTools = {
       consultarCustosSafra: tool({
         description:
           "Consulta os custos totais de insumos e serviços de uma safra.",
@@ -969,6 +993,99 @@ export async function POST(req: Request) {
         },
       }),
 
+      // ─── Workers Tools ────────────────────────────────────────────────
+
+      consultarTrabalhadores: tool({
+        description:
+          "Consulta os trabalhadores da fazenda e seus registros de trabalho recentes.",
+        inputSchema: z.object({
+          dias: z
+            .number()
+            .optional()
+            .describe(
+              "Número de dias para buscar registros (padrão 30)"
+            ),
+        }),
+        execute: async ({ dias }) => {
+          try {
+            const workerList = await db
+              .select()
+              .from(workers)
+              .orderBy(workers.name);
+
+            const period = dias ?? 30;
+            const startDate = new Date();
+            startDate.setDate(startDate.getDate() - period);
+            const startStr = startDate.toISOString().split("T")[0];
+
+            const assignments = await db
+              .select({
+                workerId: workerAssignments.workerId,
+                date: workerAssignments.date,
+                hoursWorked: workerAssignments.hoursWorked,
+                cost: workerAssignments.cost,
+                description: workerAssignments.description,
+                fieldName: fields.name,
+              })
+              .from(workerAssignments)
+              .leftJoin(fields, eq(workerAssignments.fieldId, fields.id))
+              .where(gte(workerAssignments.date, startStr))
+              .orderBy(desc(workerAssignments.date));
+
+            const roleLabels: Record<string, string> = {
+              trabalhador: "Trabalhador",
+              operador: "Operador",
+              diarista: "Diarista",
+              tratorista: "Tratorista",
+              other: "Outro",
+            };
+
+            return {
+              trabalhadores: workerList.map((w) => {
+                const workerAssigns = assignments.filter(
+                  (a) => a.workerId === w.id
+                );
+                const totalHours = workerAssigns.reduce(
+                  (s, a) => s + parseFloat(a.hoursWorked || "0"),
+                  0
+                );
+                const totalCost = workerAssigns.reduce(
+                  (s, a) => s + parseFloat(a.cost || "0"),
+                  0
+                );
+
+                return {
+                  nome: w.name,
+                  funcao: roleLabels[w.role] ?? w.role,
+                  diaria: w.dailyRate
+                    ? `R$ ${parseFloat(w.dailyRate).toFixed(2)}`
+                    : null,
+                  ativo: w.active,
+                  dataContratacao: w.hireDate,
+                  ultimos30dias: {
+                    diasTrabalhados: workerAssigns.length,
+                    horasTotal: totalHours.toFixed(0),
+                    custoTotal: `R$ ${totalCost.toFixed(2)}`,
+                  },
+                  registrosRecentes: workerAssigns.slice(0, 5).map((a) => ({
+                    data: a.date,
+                    horas: a.hoursWorked,
+                    custo: a.cost
+                      ? `R$ ${parseFloat(a.cost).toFixed(2)}`
+                      : null,
+                    descricao: a.description,
+                    talhao: a.fieldName,
+                  })),
+                };
+              }),
+              periodo: `últimos ${period} dias`,
+            };
+          } catch {
+            return { error: "Erro ao consultar trabalhadores" };
+          }
+        },
+      }),
+
       // ─── Rain/Precipitation Tools ─────────────────────────────────────
 
       consultarChuvas: tool({
@@ -1104,6 +1221,137 @@ export async function POST(req: Request) {
         },
       }),
 
+      consultarPrecos: tool({
+        description:
+          "Consulta cotações atuais de commodities agrícolas (soja e milho) do CEPEA e CBOT.",
+        inputSchema: z.object({
+          commodity: z
+            .enum(["soy", "corn"])
+            .optional()
+            .describe("Filtrar por commodity: soy (soja) ou corn (milho). Se omitido, retorna ambos."),
+        }),
+        execute: async ({ commodity }) => {
+          try {
+            const { getLatestCepeaPrices } = await import("@/lib/cepea-api");
+            const { getLatestFuturesPrices } = await import("@/lib/futures-api");
+
+            const commodities = commodity ? [commodity] : ["soy" as const, "corn" as const];
+            const result: Record<string, any> = {};
+
+            for (const c of commodities) {
+              const cepeaPrices = await getLatestCepeaPrices(c, 5);
+              const cbotPrices = await getLatestFuturesPrices(c, 5);
+              const label = c === "soy" ? "Soja" : "Milho";
+
+              result[label] = {
+                cepea: cepeaPrices.length > 0
+                  ? {
+                      ultimoPreco: `R$ ${cepeaPrices[0].pricePerSack.toFixed(2)}/saca`,
+                      data: cepeaPrices[0].date,
+                      historico5d: cepeaPrices.map((p) => ({
+                        data: p.date,
+                        preco: `R$ ${p.pricePerSack.toFixed(2)}`,
+                      })),
+                    }
+                  : "Sem dados CEPEA",
+                cbot: cbotPrices.length > 0
+                  ? {
+                      ultimoPreco: `R$ ${cbotPrices[0].pricePerSack.toFixed(2)}/saca`,
+                      precoUSD: `US$ ${cbotPrices[0].priceDollar.toFixed(2)}/bushel`,
+                      data: cbotPrices[0].date,
+                    }
+                  : "Sem dados CBOT",
+              };
+            }
+
+            return { cotacoes: result };
+          } catch {
+            return { error: "Erro ao consultar preços" };
+          }
+        },
+      }),
+
+      consultarAlertasClima: tool({
+        description:
+          "Consulta previsão do tempo e alertas climáticos ativos para a fazenda.",
+        inputSchema: z.object({}),
+        execute: async () => {
+          try {
+            const { fetchWeatherForecast, getRecentAlerts } = await import(
+              "@/lib/weather-alerts"
+            );
+            const [farm] = await db
+              .select({ id: farms.id })
+              .from(farms)
+              .limit(1);
+            if (!farm) return { error: "Fazenda não encontrada" };
+
+            const [forecast, alerts] = await Promise.all([
+              fetchWeatherForecast(),
+              getRecentAlerts(farm.id, 7),
+            ]);
+
+            return {
+              previsao: forecast
+                ? forecast.dates.map((d: string, i: number) => ({
+                    data: d,
+                    tempMax: `${forecast.tempMax[i]}°C`,
+                    tempMin: `${forecast.tempMin[i]}°C`,
+                    ventoMax: `${forecast.windMax[i]} km/h`,
+                    umidadeMin: `${forecast.humidityMin[i]}%`,
+                    chuva: `${forecast.precipitationSum[i]} mm`,
+                  }))
+                : "Previsão indisponível",
+              alertas: alerts.map((a) => ({
+                data: a.date,
+                tipo: a.metric,
+                valor: a.value,
+                mensagem: a.message,
+              })),
+              totalAlertas: alerts.length,
+            };
+          } catch {
+            return { error: "Erro ao consultar clima" };
+          }
+        },
+      }),
+
+      consultarCompradores: tool({
+        description:
+          "Consulta a lista de compradores potenciais de soja/milho cadastrados.",
+        inputSchema: z.object({}),
+        execute: async () => {
+          try {
+            const { buyers } = await import("@/server/db/schema");
+            const [farm] = await db
+              .select({ id: farms.id })
+              .from(farms)
+              .limit(1);
+            if (!farm) return { error: "Fazenda não encontrada" };
+
+            const buyerList = await db
+              .select()
+              .from(buyers)
+              .where(eq(buyers.farmId, farm.id));
+
+            return {
+              compradores: buyerList.map((b) => ({
+                nome: b.name,
+                empresa: b.company,
+                telefone: b.phone,
+                email: b.email,
+                local: b.location,
+                commodities: b.commodities,
+                ativo: b.active,
+              })),
+              total: buyerList.length,
+            };
+          } catch {
+            return { error: "Erro ao consultar compradores" };
+          }
+        },
+      }),
+
       registrarChuva: tool({
         description: "Registra uma medição manual de chuva na fazenda.",
         inputSchema: z.object({
@@ -1141,11 +1389,42 @@ export async function POST(req: Request) {
           }
         },
       }),
-    },
+    };
+
+  // Analysis mode: use generateText for reliable full response
+  if (isAnalysis) {
+    try {
+      const analysisResult = await generateText({
+        model: google("gemini-2.0-flash"),
+        system: SYSTEM_PROMPT,
+        messages: modelMessages,
+        tools: allTools,
+        stopWhen: stepCountIs(8),
+      });
+
+      const text = analysisResult.text || "Não foi possível gerar a análise. Tente novamente.";
+
+      return new Response(text, {
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+      });
+    } catch (err) {
+      console.error("Analysis generation error:", err);
+      return new Response("Erro ao gerar análise. Verifique os logs.", {
+        status: 500,
+      });
+    }
+  }
+
+  // Chat mode: stream response
+  const result = streamText({
+    model: google("gemini-2.0-flash"),
+    system: SYSTEM_PROMPT + historyContext,
+    messages: modelMessages,
+    tools: allTools,
     stopWhen: stepCountIs(8),
   });
 
-  // Consume stream to ensure completion even if client disconnects
+  // Chat mode: consume stream and persist to DB
   result.consumeStream();
 
   return result.toUIMessageStreamResponse({

@@ -15,6 +15,11 @@ import {
   Brain,
   CloudRain,
   HandCoins,
+  HardHat,
+  TrendingUp,
+  Target,
+  Tractor,
+  ListChecks,
 } from "lucide-react";
 import {
   Sidebar,
@@ -42,6 +47,11 @@ const iconMap = {
   Brain,
   CloudRain,
   HandCoins,
+  HardHat,
+  TrendingUp,
+  Target,
+  Tractor,
+  ListChecks,
 } as const;
 
 interface AppSidebarProps {
